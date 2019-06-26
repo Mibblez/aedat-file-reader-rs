@@ -11,3 +11,7 @@ Cargo.lock
 
 # Pycharm Idea files
 **/.idea
+
+# CSV exports and AEDAT files
+*.csv
+*.aedat

@@ -2,6 +2,8 @@ use std::io::prelude::*;
 use std::fs::File;
 use std::convert::TryInto;
 use std::io::ErrorKind;
+use std::process;
+use std::env;
 
 struct Event {
     bytes: [u8; 8],
@@ -29,6 +31,32 @@ impl Event {
 
     // DVS240C  (X = width - bits44-53) ; (Y = height - bits54-62) [bytes 0-2]
     // Make method pls
+}
+
+struct Config {
+    filename: String,
+    include_polarity: bool,
+}
+
+impl Config {
+    fn new(args: &[String]) -> Result<Config, std::io::Error> {
+         if args.len() < 2 {
+             return Err(std::io::Error::new(ErrorKind::InvalidInput,
+                                            "Not enough arguments"))
+         }
+
+        let filename = args[1].clone();
+        let include_polarity = match args[2].as_ref() {
+            "-p" => true,
+            "-np" => false,
+            _ => return Err(std::io::Error::new(ErrorKind::InvalidInput,
+                                            "Invalid input"))
+
+        };
+
+        Ok(Config {filename, include_polarity})
+
+    }
 }
 
 fn find_header_end(file_path: &str) -> Result<u32, std::io::Error> {
@@ -134,10 +162,23 @@ fn get_events(end_of_header_index: u32, file_path: &str) -> Result<Vec<Event>, s
     Ok(events)
 }
 
-fn create_csv (events: Vec<Event>, filename: &str) -> std::io::Result<()> {
+fn format_polarity(polarity: bool) -> String {
+    format!( "{},", match polarity { true => "1", false => "-1" })
+}
+
+// TODO: Make more modular
+fn config_header(config: &Config) -> &[u8] {
+    if config.include_polarity == true {
+        return "On/Off,X,Y,Timestamp\n".as_bytes()
+    } else {
+        return "X,Y,Timestamp\n".as_bytes()
+    }
+}
+
+fn create_csv (events: Vec<Event>, filename: &str, config: &Config) -> std::io::Result<()> {
     // Create CSV file and write header
     let mut new_csv = File::create(filename)?;
-    let csv_header = "On/Off,X,Y,Timestamp\n".as_bytes();
+    let csv_header = config_header(config);
     new_csv.write(csv_header)?;
 
     // Create write buffer and preallocate space
@@ -149,7 +190,10 @@ fn create_csv (events: Vec<Event>, filename: &str) -> std::io::Result<()> {
 
         write!(&mut write_buf, "{}",
                format!("{p}{xy}{t}\n",
-                       p  = format!( "{},", match event.get_polarity() { true => "1", false => "-1" , } ),
+                       p  = match config.include_polarity {
+                           true => format_polarity(event.get_polarity()),
+                           false => String::from(""),
+                       },
                        xy = format!("{x},{y},", x = x, y = y),
                        t  = event.get_timestamp()))?;
 
@@ -169,18 +213,25 @@ fn create_csv (events: Vec<Event>, filename: &str) -> std::io::Result<()> {
 }
 
 fn main() {
-    let header_end = find_header_end("80HZ-45degrees.aedat").unwrap();
+    // Get environment variables
+    let args: Vec<String> = env::args().collect();
+    let config = Config::new(&args).unwrap_or_else(|err| {
+        eprintln!("Problem parsing arguments: {}", err);
+        process::exit(1);
+    });
+
+    let header_end = find_header_end(&config.filename).unwrap();
     println!("End of header at position: {:?}", header_end);
     event_test();
 
-    let events = get_events(header_end, "80HZ-45degrees.aedat").unwrap();
+    let events = get_events(header_end, &config.filename).unwrap();
 
     println!("Total number of events: {}", events.len());
 
     use std::time::Instant;
     let now = Instant::now();
 
-    create_csv(events, "test.csv").unwrap();
+    create_csv(events, "test.csv", &config).unwrap();
 
     let elapsed = now.elapsed();
     let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1000_000_000.0);
