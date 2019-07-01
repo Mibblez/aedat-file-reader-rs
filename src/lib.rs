@@ -35,11 +35,18 @@ pub mod aedat_utilities {
     pub struct Config {
         pub filename: String,
         pub include_polarity: bool,
+        pub coords: CoordModes,
+    }
+
+    pub enum CoordModes {
+        NoCoord,
+        XY,
+        PixelNum,
     }
 
     impl Config {
         pub fn new(args: &[String]) -> Result<Config, std::io::Error> {
-            if args.len() < 2 {
+            if args.len() < 3 {
                 return Err(std::io::Error::new(ErrorKind::InvalidInput,
                                                "Not enough arguments"));
             }
@@ -52,7 +59,15 @@ pub mod aedat_utilities {
                                                     "Invalid input"))
             };
 
-            Ok(Config { filename, include_polarity })
+            let coords = match args[3].as_ref() {
+                "-nc" => CoordModes::NoCoord,
+                "-xy" => CoordModes::XY,
+                "-pn" => CoordModes::PixelNum,
+                _ => return Err(std::io::Error::new(ErrorKind::InvalidInput,
+                                                    "Invalid input"))
+            };
+
+            Ok(Config { filename, include_polarity, coords })
         }
     }
 
@@ -63,37 +78,25 @@ pub mod aedat_utilities {
         const END_OF_ASCII: [u8; 22] = [35, 69, 110, 100, 32, 79, 102, 32, 65, 83, 67, 73, 73, 32, 72, 101, 97, 100, 101, 114, 13, 10];
 
         let mut header_end_q = Vec::with_capacity(END_OF_ASCII.len());
-        let mut header_end_index = 0;
 
         // read up to 0.5MB
-        const HALF_MB: u32 = 524288;
         let mut buffer = [0; 524288];
         f.read(&mut buffer)?;
 
-        let mut iter = buffer.iter();
+        for (i, &item) in buffer.iter().enumerate() {
 
-        loop {
-            let next = iter.next();
-            match next {
-                Some(num) => header_end_q.push(num.to_owned()),
-                None => break,
-            }
+            header_end_q.push(item.to_owned());
 
             // Pop oldest value off the queue if it becomes too large
             if header_end_q.len() > END_OF_ASCII.len() {
                 header_end_q.remove(0);
             }
 
-            header_end_index += 1;
-
-            // Break if end of header has been found
-            if &END_OF_ASCII[..] == &header_end_q[..] { break; }
-
-            if header_end_index == HALF_MB - 1 {
-                return Err(std::io::Error::new(ErrorKind::NotFound, "End of header not found"));
-            }
+            // End of header has been found
+            if &END_OF_ASCII[..] == &header_end_q[..] { return Ok((i + 1) as u32); }
         }
-        Ok(header_end_index)
+
+        return Err(std::io::Error::new(ErrorKind::NotFound, "End of header not found"));
     }
 
 
@@ -107,20 +110,15 @@ pub mod aedat_utilities {
         f.read_to_end(&mut buffer)?;
 
         // Skip over the header to get directly to the event data
-        let mut aedat_iter = buffer.iter().skip(end_of_header_index as usize);
+        let aedat_iter = buffer.iter().skip(end_of_header_index as usize).enumerate();
 
         // Pre-allocate space in vec for all events
         let mut events = Vec::with_capacity(aedat_iter.len() / EVENT_SIZE);
         let mut bytes_tmp = Vec::with_capacity(EVENT_SIZE);
 
         // Loop over all bytes in file
-        loop {
-            let next = match aedat_iter.next() {
-                Some(t) => t,
-                None => break,  // Exit loop if end of file is reached
-            };
-
-            bytes_tmp.push(next.to_owned());
+        for (_i, &item) in aedat_iter {
+            bytes_tmp.push(item.to_owned());
 
             // Collected enough bytes for an event. Create event and push to Vec of events
             if bytes_tmp.len() == EVENT_SIZE {
@@ -143,22 +141,41 @@ pub mod aedat_utilities {
     }
 
     // TODO: Make more modular
-    fn config_header(config: &Config) -> &[u8] {
+    fn config_header(config: &Config) -> String {
+        let mut header_tmp = String::from("");
+
         if config.include_polarity == true {
-            return "On/Off,X,Y,Timestamp\n".as_bytes();
-        } else {
-            return "X,Y,Timestamp\n".as_bytes();
+            header_tmp.push_str("On/Off,");
         }
+
+        match config.coords {
+            CoordModes::NoCoord => (),
+            CoordModes::XY => header_tmp.push_str("X,Y,"),
+            CoordModes::PixelNum => header_tmp.push_str("Pixel Number,"),
+        };
+
+        header_tmp.push_str("Timestamp\n");
+
+        header_tmp
+
+    }
+
+    fn format_coords_xy(x: u8, y: u8) -> String {
+        format!("{x},{y},", x = x, y = y)
+    }
+
+    fn format_coords_pn(x: u8, y: u8, camera_y: &u8) -> String {
+        format!("{},", ((y as u32 * *camera_y as u32) + x as u32))
     }
 
     pub fn create_csv(events: Vec<Event>, filename: &str, config: &Config) -> std::io::Result<()> {
         // Create CSV file and write header
         let mut new_csv = File::create(filename)?;
         let csv_header = config_header(&config);
-        new_csv.write(csv_header)?;
+        new_csv.write(csv_header.as_bytes())?;
 
         // Create write buffer and preallocate space
-        const BUF_PREALLOCATE_SIZE: usize = 100000;
+        const BUF_PREALLOCATE_SIZE: usize = 150000;
         let mut write_buf = Vec::with_capacity(BUF_PREALLOCATE_SIZE);
 
         for event in events {
@@ -170,7 +187,13 @@ pub mod aedat_utilities {
                                true => format_polarity(event.get_polarity()),
                                false => String::from(""),
                            },
-                           xy = format!("{x},{y},", x = x, y = y),
+                           xy = match config.coords {
+                               CoordModes:: XY => format_coords_xy(x, y),
+                               // TODO: determine camera_y from reading AEDAT header
+                               CoordModes:: PixelNum => format_coords_pn(x, y, &128),
+                               CoordModes:: NoCoord => String::from(""),
+
+                           },
                            t = event.get_timestamp()))?;
 
             // Write events to disk once enough have been collected
