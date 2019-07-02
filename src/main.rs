@@ -4,6 +4,7 @@ use std::env;
 mod lib;
 pub use crate::lib::aedat_utilities;
 
+
 fn main() {
     // Get environment variables
     let args: Vec<String> = env::args().collect();
@@ -11,6 +12,9 @@ fn main() {
         eprintln!("Problem parsing arguments: {}", err);
         process::exit(1);
     });
+
+    let cam = aedat_utilities::parse_camera_type(&config.filename).unwrap();
+    println!("Found camera: {:?}", cam.camera_type);
 
     let header_end =  aedat_utilities::find_header_end(&config.filename).unwrap();
     println!("End of header at position: {:?}", header_end);
@@ -22,16 +26,12 @@ fn main() {
     use std::time::Instant;
     let now = Instant::now();
 
-    aedat_utilities::create_csv(events, "test.csv", &config).unwrap();
+    aedat_utilities::create_csv(events, "test.csv", &config, &cam).unwrap();
 
     let elapsed = now.elapsed();
     let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1000_000_000.0);
     println!("Export time: {} seconds", sec);
 }
-
-
-
-
 
 
 

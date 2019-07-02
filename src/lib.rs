@@ -28,20 +28,45 @@ pub mod aedat_utilities {
              128 - (self.bytes[2] & 0b1111111) as u8)        // Y coordinate
         }
 
-        // DVS240C  (X = width - bits44-53) ; (Y = height - bits54-62) [bytes 0-2]
-        // Make method pls
+        // finish method pls. Is just a copy of 128 right now
+        pub fn get_coords_davis240c(&self) -> (u8, u8) {
+            // DVS240C  (X = width - bits44-53) ; (Y = height - bits54-62) [bytes 0-2]
+            (128 - ((self.bytes[3] >> 1) & 0b1111111) as u8, // X coordinate
+             128 - (self.bytes[2] & 0b1111111) as u8)        // Y coordinate
+        }
     }
 
     pub struct Config {
         pub filename: String,
         pub include_polarity: bool,
-        pub coords: CoordModes,
+        pub coords: CoordMode,
     }
 
-    pub enum CoordModes {
+    pub enum CoordMode {
         NoCoord,
         XY,
         PixelNum,
+    }
+
+    #[derive(Debug)]
+    pub enum CameraType {
+        DVS128,
+        DAVIS240C,
+    }
+
+    pub struct CameraParameters {
+        pub camera_type: CameraType,
+        pub camera_x: u8,
+        pub camera_y: u8,
+    }
+
+    impl CameraParameters {
+        pub fn new(camera_type: CameraType) -> CameraParameters {
+            match camera_type {
+                CameraType::DVS128 => CameraParameters{camera_type, camera_x: 128, camera_y: 128},
+                CameraType::DAVIS240C => CameraParameters{camera_type, camera_x: 240, camera_y: 180},
+            }
+        }
     }
 
     impl Config {
@@ -60,15 +85,45 @@ pub mod aedat_utilities {
             };
 
             let coords = match args[3].as_ref() {
-                "-nc" => CoordModes::NoCoord,
-                "-xy" => CoordModes::XY,
-                "-pn" => CoordModes::PixelNum,
+                "-nc" => CoordMode::NoCoord,
+                "-xy" => CoordMode::XY,
+                "-pn" => CoordMode::PixelNum,
                 _ => return Err(std::io::Error::new(ErrorKind::InvalidInput,
                                                     "Invalid input"))
             };
 
             Ok(Config { filename, include_polarity, coords })
         }
+    }
+
+    pub fn find_line_in_header(file_path: &str, search: &str) -> Result<String, std::io::Error> {
+        let mut f = File::open(file_path)?;
+
+         // read up to 0.5MB
+        let mut buffer = [0; 524288];
+        f.read(&mut buffer)?;
+
+        let contents = String::from_utf8_lossy(&buffer);
+
+        for line in contents.lines() {
+            if line.contains(search) { return Ok(String::from(line))}
+        }
+
+        return Err(std::io::Error::new(ErrorKind::NotFound, "Search not found"));
+
+
+    }
+
+    pub fn parse_camera_type(file_path: &str) -> Result<CameraParameters, std::io::Error> {
+        let hardware_interface = find_line_in_header(file_path, "# HardwareInterface:")?;
+
+        match Some(hardware_interface) {
+            Some(ref s) if (s.contains("DVS128")) =>
+                return Ok(CameraParameters::new(CameraType::DVS128)),
+            Some(ref s) if (s.contains("DAVIS240C")) =>
+                return Ok(CameraParameters::new(CameraType::DAVIS240C)),
+            _ => return Err(std::io::Error::new(ErrorKind::NotFound, "Could not parse camera type")),
+        };
     }
 
     pub fn find_header_end(file_path: &str) -> Result<u32, std::io::Error> {
@@ -149,9 +204,9 @@ pub mod aedat_utilities {
         }
 
         match config.coords {
-            CoordModes::NoCoord => (),
-            CoordModes::XY => header_tmp.push_str("X,Y,"),
-            CoordModes::PixelNum => header_tmp.push_str("Pixel Number,"),
+            CoordMode::NoCoord => (),
+            CoordMode::XY => header_tmp.push_str("X,Y,"),
+            CoordMode::PixelNum => header_tmp.push_str("Pixel Number,"),
         };
 
         header_tmp.push_str("Timestamp\n");
@@ -164,11 +219,11 @@ pub mod aedat_utilities {
         format!("{x},{y},", x = x, y = y)
     }
 
-    fn format_coords_pn(x: u8, y: u8, camera_y: &u8) -> String {
-        format!("{},", ((y as u32 * *camera_y as u32) + x as u32))
+    fn format_coords_pn(x: u8, y: u8, cam_x: &u8) -> String {
+        format!("{},", ((*cam_x as u32 * (y - 1) as u32) + (x - 1) as u32))
     }
 
-    pub fn create_csv(events: Vec<Event>, filename: &str, config: &Config) -> std::io::Result<()> {
+    pub fn create_csv(events: Vec<Event>, filename: &str, config: &Config, cam: &CameraParameters) -> std::io::Result<()> {
         // Create CSV file and write header
         let mut new_csv = File::create(filename)?;
         let csv_header = config_header(&config);
@@ -179,7 +234,11 @@ pub mod aedat_utilities {
         let mut write_buf = Vec::with_capacity(BUF_PREALLOCATE_SIZE);
 
         for event in events {
-            let (x, y) = event.get_coords_dvs128();
+
+            let (x, y) = match cam.camera_type {
+                CameraType::DVS128 => event.get_coords_dvs128(),
+                CameraType::DAVIS240C => event.get_coords_davis240c(),
+            };
 
             write!(&mut write_buf, "{}",
                    format!("{p}{xy}{t}\n",
@@ -188,10 +247,9 @@ pub mod aedat_utilities {
                                false => String::from(""),
                            },
                            xy = match config.coords {
-                               CoordModes:: XY => format_coords_xy(x, y),
-                               // TODO: determine camera_y from reading AEDAT header
-                               CoordModes:: PixelNum => format_coords_pn(x, y, &128),
-                               CoordModes:: NoCoord => String::from(""),
+                               CoordMode:: XY => format_coords_xy(x, y),
+                               CoordMode:: PixelNum => format_coords_pn(x, y, &cam.camera_x),
+                               CoordMode:: NoCoord => String::from(""),
 
                            },
                            t = event.get_timestamp()))?;
