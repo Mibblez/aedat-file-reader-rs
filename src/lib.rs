@@ -25,14 +25,14 @@ pub mod aedat_utilities {
         pub fn get_coords_dvs128(&self) -> (u8, u8) {
             // DVS128   (X = width - bits33-39 ) ; (Y = height - bits40-46 ) [bytes 2-3]
             (128 - ((self.bytes[3] >> 1) & 0b1111111) as u8, // X coordinate
-             128 - (self.bytes[2] & 0b1111111) as u8)        // Y coordinate
+             128 - (self.bytes[0] & 0b1111111) as u8)        // Y coordinate
         }
 
-        // finish method pls. Is just a copy of 128 right now
-        pub fn get_coords_davis240c(&self) -> (u8, u8) {
-            // DVS240C  (X = width - bits44-53) ; (Y = height - bits54-62) [bytes 0-2]
-            (128 - ((self.bytes[3] >> 1) & 0b1111111) as u8, // X coordinate
-             128 - (self.bytes[2] & 0b1111111) as u8)        // Y coordinate
+        // finish method pls. Same as 128 currently
+        pub fn get_coords_davis240(&self) -> (u8, u8) {
+            // DAVIS240  (X = width - bits51-44) ; (Y = height - bits60-54) [bytes 0-2]
+            (240 - (((self.bytes[1] << 4) & 0b11110000) + ((self.bytes[2] >> 4) & 0b1111)) as u8,// X coordinate
+             180 - (((self.bytes[0] << 2) & 0b01111100) + ((self.bytes[1] >> 6) & 0b11)) as u8)  // Y coordinate
         }
     }
 
@@ -40,33 +40,6 @@ pub mod aedat_utilities {
         pub filename: String,
         pub include_polarity: bool,
         pub coords: CoordMode,
-    }
-
-    pub enum CoordMode {
-        NoCoord,
-        XY,
-        PixelNum,
-    }
-
-    #[derive(Debug)]
-    pub enum CameraType {
-        DVS128,
-        DAVIS240C,
-    }
-
-    pub struct CameraParameters {
-        pub camera_type: CameraType,
-        pub camera_x: u8,
-        pub camera_y: u8,
-    }
-
-    impl CameraParameters {
-        pub fn new(camera_type: CameraType) -> CameraParameters {
-            match camera_type {
-                CameraType::DVS128 => CameraParameters{camera_type, camera_x: 128, camera_y: 128},
-                CameraType::DAVIS240C => CameraParameters{camera_type, camera_x: 240, camera_y: 180},
-            }
-        }
     }
 
     impl Config {
@@ -96,51 +69,73 @@ pub mod aedat_utilities {
         }
     }
 
-    pub fn find_line_in_header(file_path: &str, search: &str) -> Result<String, std::io::Error> {
-        let mut f = File::open(file_path)?;
+    pub enum CoordMode {
+        NoCoord,
+        XY,
+        PixelNum,
+    }
 
-         // read up to 0.5MB
-        let mut buffer = [0; 524288];
-        f.read(&mut buffer)?;
+    #[derive(Debug)]
+    pub enum CameraType {
+        DVS128,
+        DAVIS240,
+    }
 
-        let contents = String::from_utf8_lossy(&buffer);
+    pub struct CameraParameters {
+        pub camera_type: CameraType,
+        pub camera_x: u8,
+        pub camera_y: u8,
+    }
+
+    impl CameraParameters {
+        pub fn new(camera_type: CameraType) -> CameraParameters {
+            match camera_type {
+                CameraType::DVS128 => CameraParameters{camera_type, camera_x: 128, camera_y: 128},
+                CameraType::DAVIS240 => CameraParameters{camera_type, camera_x: 240, camera_y: 180},
+            }
+        }
+    }
+
+    pub fn find_line_in_header(aedat_file: &Vec<u8>, search: &str) -> Result<String, std::io::Error> {
+        // Grab 0.5MB or the entire file if too small
+        let header = match aedat_file {
+            file if file.len() >= 524288 => &aedat_file[0..524288],
+            _ => &aedat_file,
+        };
+
+        let contents = String::from_utf8_lossy(header);
 
         for line in contents.lines() {
             if line.contains(search) { return Ok(String::from(line))}
         }
 
-        return Err(std::io::Error::new(ErrorKind::NotFound, "Search not found"));
+        return Err(std::io::Error::new(
+            ErrorKind::NotFound, format!("'{}' was not found in the file", search)));
 
 
     }
 
-    pub fn parse_camera_type(file_path: &str) -> Result<CameraParameters, std::io::Error> {
-        let hardware_interface = find_line_in_header(file_path, "# HardwareInterface:")?;
+    pub fn parse_camera_type(aedat_file: &Vec<u8>) -> Result<CameraParameters, std::io::Error> {
+        let hardware_interface = find_line_in_header(&aedat_file, "# HardwareInterface:")?;
 
         match Some(hardware_interface) {
             Some(ref s) if (s.contains("DVS128")) =>
                 return Ok(CameraParameters::new(CameraType::DVS128)),
-            Some(ref s) if (s.contains("DAVIS240C")) =>
-                return Ok(CameraParameters::new(CameraType::DAVIS240C)),
+            Some(ref s) if (s.contains("DAVIS240")) =>
+                return Ok(CameraParameters::new(CameraType::DAVIS240)),
             _ => return Err(std::io::Error::new(ErrorKind::NotFound, "Could not parse camera type")),
         };
     }
 
-    pub fn find_header_end(file_path: &str) -> Result<u32, std::io::Error> {
-        let mut f = File::open(file_path)?;
-
+    pub fn find_header_end(aedat_file: &Vec<u8>) -> Result<u32, std::io::Error> {
         // Equivalent to: #End Of ASCII
         const END_OF_ASCII: [u8; 22] = [35, 69, 110, 100, 32, 79, 102, 32, 65, 83, 67, 73, 73, 32, 72, 101, 97, 100, 101, 114, 13, 10];
 
         let mut header_end_q = Vec::with_capacity(END_OF_ASCII.len());
 
-        // read up to 0.5MB
-        let mut buffer = [0; 524288];
-        f.read(&mut buffer)?;
+        for (i, &item) in aedat_file.iter().enumerate() {
 
-        for (i, &item) in buffer.iter().enumerate() {
-
-            header_end_q.push(item.to_owned());
+            header_end_q.push(item);
 
             // Pop oldest value off the queue if it becomes too large
             if header_end_q.len() > END_OF_ASCII.len() {
@@ -155,17 +150,12 @@ pub mod aedat_utilities {
     }
 
 
-    pub fn get_events(end_of_header_index: u32, file_path: &str) -> Result<Vec<Event>, std::io::Error> {
+    pub fn get_events(end_of_header_index: u32, aedat_file: &Vec<u8>) -> Result<Vec<Event>, std::io::Error> {
         // Size of an event in bytes
         const EVENT_SIZE: usize = 8;
 
-        // Read file
-        let mut f = File::open(file_path)?;
-        let mut buffer = Vec::new();
-        f.read_to_end(&mut buffer)?;
-
         // Skip over the header to get directly to the event data
-        let aedat_iter = buffer.iter().skip(end_of_header_index as usize).enumerate();
+        let aedat_iter = aedat_file.iter().skip(end_of_header_index as usize).enumerate();
 
         // Pre-allocate space in vec for all events
         let mut events = Vec::with_capacity(aedat_iter.len() / EVENT_SIZE);
@@ -195,7 +185,6 @@ pub mod aedat_utilities {
         })
     }
 
-    // TODO: Make more modular
     fn config_header(config: &Config) -> String {
         let mut header_tmp = String::from("");
 
@@ -234,10 +223,9 @@ pub mod aedat_utilities {
         let mut write_buf = Vec::with_capacity(BUF_PREALLOCATE_SIZE);
 
         for event in events {
-
             let (x, y) = match cam.camera_type {
                 CameraType::DVS128 => event.get_coords_dvs128(),
-                CameraType::DAVIS240C => event.get_coords_davis240c(),
+                CameraType::DAVIS240 => event.get_coords_davis240(),
             };
 
             write!(&mut write_buf, "{}",
@@ -291,5 +279,70 @@ mod tests {
         let (x, y) = test_event_struct.get_coords_dvs128();
         assert_eq!(x, 13);
         assert_eq!(y, 72);
+    }
+
+    fn read_test_file(file_path: &str) -> Vec<u8> {
+        use std::io::prelude::*;
+        use std::fs::File;
+
+        // Read file
+        let mut f = File::open(file_path)
+            .expect("Could not access test file");
+        let mut aedat_file = Vec::new();
+        f.read_to_end(&mut aedat_file).expect("Could not read test file");
+
+        aedat_file
+    }
+
+    #[test]
+    fn header_end_test_128() {
+        let aedat_file = read_test_file("test_files/header_test_128.txt");
+
+        let header_end =  match find_header_end(&aedat_file) {
+            Ok(t) => t,
+            Err(e) => panic!("Could not find end of header {}", e),
+        };
+
+        assert_eq!(header_end, 4241);
+    }
+
+    #[test]
+    fn header_end_test_240() {
+        let aedat_file = read_test_file("test_files/header_test_240.txt");
+
+        let header_end =  match find_header_end(&aedat_file) {
+            Ok(t) => t,
+            Err(e) => panic!("Could not find end of header {}", e),
+        };
+
+        assert_eq!(header_end, 303869);
+    }
+
+    #[test]
+    fn camera_type_test_128() {
+        let aedat_file = read_test_file("test_files/header_test_128.txt");
+
+        let cam = match parse_camera_type(&aedat_file) {
+            Ok(t) => t,
+            Err(e) => panic!(e),
+        };
+
+        assert_eq!(cam.camera_x, 128);
+        assert_eq!(cam.camera_y, 128);
+
+    }
+
+    #[test]
+    fn camera_type_test_240() {
+        let aedat_file = read_test_file("test_files/header_test_240.txt");
+
+        let cam = match parse_camera_type(&aedat_file) {
+            Ok(t) => t,
+            Err(e) => panic!(e),
+        };
+
+        assert_eq!(cam.camera_x, 240);
+        assert_eq!(cam.camera_y, 180);
+
     }
 }

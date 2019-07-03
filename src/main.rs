@@ -1,8 +1,10 @@
-use std::process;
-use std::env;
-
 mod lib;
 pub use crate::lib::aedat_utilities;
+
+use std::io::prelude::*;
+use std::process;
+use std::env;
+use std::fs::File;
 
 
 fn main() {
@@ -13,13 +15,18 @@ fn main() {
         process::exit(1);
     });
 
-    let cam = aedat_utilities::parse_camera_type(&config.filename).unwrap();
+    // Read file
+    let mut f = File::open(&config.filename).unwrap();
+    let mut aedat_file = Vec::new();
+    f.read_to_end(&mut aedat_file).unwrap();
+
+    let cam = aedat_utilities::parse_camera_type(&aedat_file).unwrap();
     println!("Found camera: {:?}", cam.camera_type);
 
-    let header_end =  aedat_utilities::find_header_end(&config.filename).unwrap();
+    let header_end =  aedat_utilities::find_header_end(&aedat_file).unwrap();
     println!("End of header at position: {:?}", header_end);
 
-    let events = aedat_utilities::get_events(header_end, &config.filename).unwrap();
+    let events = aedat_utilities::get_events(header_end, &aedat_file).unwrap();
 
     println!("Total number of events: {}", events.len());
 
