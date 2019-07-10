@@ -25,10 +25,9 @@ pub mod aedat_utilities {
         pub fn get_coords_dvs128(&self) -> (u8, u8) {
             // DVS128   (X = width - bits33-39 ) ; (Y = height - bits40-46 ) [bytes 2-3]
             (128 - ((self.bytes[3] >> 1) & 0b1111111) as u8, // X coordinate
-             128 - (self.bytes[0] & 0b1111111) as u8)        // Y coordinate
+             128 - (self.bytes[2] & 0b1111111) as u8)        // Y coordinate
         }
 
-        // finish method pls. Same as 128 currently
         pub fn get_coords_davis240(&self) -> (u8, u8) {
             // DAVIS240  (X = width - bits51-44) ; (Y = height - bits60-54) [bytes 0-2]
             (240 - (((self.bytes[1] << 4) & 0b11110000) + ((self.bytes[2] >> 4) & 0b1111)) as u8,// X coordinate
@@ -296,11 +295,13 @@ mod tests {
 
     #[test]
     fn header_end_test_128() {
-        let aedat_file = read_test_file("test_files/header_test_128.txt");
+        let aedat_file = read_test_file("test_files/header_test_128.aedat_test");
+
+        // println!("{:?}", aedat_file);
 
         let header_end =  match find_header_end(&aedat_file) {
             Ok(t) => t,
-            Err(e) => panic!("Could not find end of header {}", e),
+            Err(e) => panic!("{}", e),
         };
 
         assert_eq!(header_end, 4241);
@@ -308,11 +309,11 @@ mod tests {
 
     #[test]
     fn header_end_test_240() {
-        let aedat_file = read_test_file("test_files/header_test_240.txt");
+        let aedat_file = read_test_file("test_files/header_test_240.aedat_test");
 
         let header_end =  match find_header_end(&aedat_file) {
             Ok(t) => t,
-            Err(e) => panic!("Could not find end of header {}", e),
+            Err(e) => panic!("{}", e),
         };
 
         assert_eq!(header_end, 303869);
@@ -320,7 +321,7 @@ mod tests {
 
     #[test]
     fn camera_type_test_128() {
-        let aedat_file = read_test_file("test_files/header_test_128.txt");
+        let aedat_file = read_test_file("test_files/header_test_128.aedat_test");
 
         let cam = match parse_camera_type(&aedat_file) {
             Ok(t) => t,
@@ -334,7 +335,7 @@ mod tests {
 
     #[test]
     fn camera_type_test_240() {
-        let aedat_file = read_test_file("test_files/header_test_240.txt");
+        let aedat_file = read_test_file("test_files/header_test_240.aedat_test");
 
         let cam = match parse_camera_type(&aedat_file) {
             Ok(t) => t,
