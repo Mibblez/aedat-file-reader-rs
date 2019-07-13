@@ -245,7 +245,7 @@ pub mod aedat_utilities {
 
     pub fn create_csv(events: Vec<Event>, filename: &str, config: &CsvConfig, cam: &CameraParameters) -> std::io::Result<()> {
         // Create CSV file and write header
-        let mut new_csv = File::create(filename)?;
+        let mut new_csv = File::create( format!("{}.csv", filename))?;
         let csv_header = config_header(&config);
         new_csv.write(csv_header.as_bytes())?;
 

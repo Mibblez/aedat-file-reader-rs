@@ -36,7 +36,9 @@ fn main() {
         use std::time::Instant;
         let now = Instant::now();
 
-        aedat_utilities::create_csv(events, "test.csv", &csv_config, &cam).unwrap();
+        // TODO: should probably fix this mess
+        let csv_name = Path::new(&csv_config.filename).file_stem().unwrap().to_str().unwrap();
+        aedat_utilities::create_csv(events, csv_name, &csv_config, &cam).unwrap();
 
         let elapsed = now.elapsed();
         let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1000_000_000.0);
