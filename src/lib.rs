@@ -3,6 +3,11 @@ pub mod aedat_utilities {
     use std::fs::File;
     use std::convert::TryInto;
     use std::io::ErrorKind;
+    use std::fs;
+    use std::process::Command;
+    use self::image::ImageBuffer;
+
+    extern crate image;
 
     pub struct Event {
         pub bytes: [u8; 8],
@@ -35,28 +40,28 @@ pub mod aedat_utilities {
         }
     }
 
-    pub struct Config {
+    pub struct CsvConfig {
         pub filename: String,
         pub include_polarity: bool,
         pub coords: CoordMode,
     }
 
-    impl Config {
-        pub fn new(args: &[String]) -> Result<Config, std::io::Error> {
-            if args.len() < 3 {
+    impl CsvConfig {
+        pub fn new(args: &[String]) -> Result<CsvConfig, std::io::Error> {
+            if args.len() < 4 {
                 return Err(std::io::Error::new(ErrorKind::InvalidInput,
                                                "Not enough arguments"));
             }
 
             let filename = args[1].clone();
-            let include_polarity = match args[2].as_ref() {
+            let include_polarity = match args[3].as_ref() {
                 "-p" => true,
                 "-np" => false,
                 _ => return Err(std::io::Error::new(ErrorKind::InvalidInput,
                                                     "Invalid input"))
             };
 
-            let coords = match args[3].as_ref() {
+            let coords = match args[4].as_ref() {
                 "-nc" => CoordMode::NoCoord,
                 "-xy" => CoordMode::XY,
                 "-pn" => CoordMode::PixelNum,
@@ -64,7 +69,38 @@ pub mod aedat_utilities {
                                                     "Invalid input"))
             };
 
-            Ok(Config { filename, include_polarity, coords })
+            Ok(CsvConfig { filename, include_polarity, coords })
+        }
+    }
+
+    pub struct VidConfig {
+        pub filename: String,
+        pub time_per_frame: usize,
+        pub max_frames: usize,
+    }
+
+    impl VidConfig {
+        pub fn new(args: &[String]) -> Result<VidConfig, std::io::Error> {
+            if args.len() < 4 {
+                return Err(std::io::Error::new(ErrorKind::InvalidInput,
+                                               "Not enough arguments"));
+            };
+
+            let filename = args[1].clone();
+
+            // TODO: make it easier to know that arg[3] is time per frame (t=5000) or something
+            let time_per_frame: usize = match args[3].clone().parse() {
+                Ok(t) => t,
+                Err(e) => panic!("{}", e),
+            };
+
+
+            // TODO: make it easier to know that arg[4] is max frames (max_f=1000) or something
+            let max_frames: usize = match args[4].clone().parse() {
+                Ok(t) => t,
+                Err(e) => panic!("{}", e),
+            };
+            Ok(VidConfig { filename, time_per_frame, max_frames })
         }
     }
 
@@ -89,8 +125,8 @@ pub mod aedat_utilities {
     impl CameraParameters {
         pub fn new(camera_type: CameraType) -> CameraParameters {
             match camera_type {
-                CameraType::DVS128 => CameraParameters{camera_type, camera_x: 128, camera_y: 128},
-                CameraType::DAVIS240 => CameraParameters{camera_type, camera_x: 240, camera_y: 180},
+                CameraType::DVS128 => CameraParameters { camera_type, camera_x: 128, camera_y: 128 },
+                CameraType::DAVIS240 => CameraParameters { camera_type, camera_x: 240, camera_y: 180 },
             }
         }
     }
@@ -105,13 +141,11 @@ pub mod aedat_utilities {
         let contents = String::from_utf8_lossy(header);
 
         for line in contents.lines() {
-            if line.contains(search) { return Ok(String::from(line))}
+            if line.contains(search) { return Ok(String::from(line)); }
         }
 
         return Err(std::io::Error::new(
             ErrorKind::NotFound, format!("'{}' was not found in the file", search)));
-
-
     }
 
     pub fn parse_camera_type(aedat_file: &Vec<u8>) -> Result<CameraParameters, std::io::Error> {
@@ -133,7 +167,6 @@ pub mod aedat_utilities {
         let mut header_end_q = Vec::with_capacity(END_OF_ASCII.len());
 
         for (i, &item) in aedat_file.iter().enumerate() {
-
             header_end_q.push(item);
 
             // Pop oldest value off the queue if it becomes too large
@@ -184,7 +217,7 @@ pub mod aedat_utilities {
         })
     }
 
-    fn config_header(config: &Config) -> String {
+    fn config_header(config: &CsvConfig) -> String {
         let mut header_tmp = String::from("");
 
         if config.include_polarity == true {
@@ -200,7 +233,6 @@ pub mod aedat_utilities {
         header_tmp.push_str("Timestamp\n");
 
         header_tmp
-
     }
 
     fn format_coords_xy(x: u8, y: u8) -> String {
@@ -211,7 +243,7 @@ pub mod aedat_utilities {
         format!("{},", ((*cam_x as u32 * (y - 1) as u32) + (x - 1) as u32))
     }
 
-    pub fn create_csv(events: Vec<Event>, filename: &str, config: &Config, cam: &CameraParameters) -> std::io::Result<()> {
+    pub fn create_csv(events: Vec<Event>, filename: &str, config: &CsvConfig, cam: &CameraParameters) -> std::io::Result<()> {
         // Create CSV file and write header
         let mut new_csv = File::create(filename)?;
         let csv_header = config_header(&config);
@@ -234,10 +266,9 @@ pub mod aedat_utilities {
                                false => String::from(""),
                            },
                            xy = match config.coords {
-                               CoordMode:: XY => format_coords_xy(x, y),
-                               CoordMode:: PixelNum => format_coords_pn(x, y, &cam.camera_x),
-                               CoordMode:: NoCoord => String::from(""),
-
+                               CoordMode::XY => format_coords_xy(x, y),
+                               CoordMode::PixelNum => format_coords_pn(x, y, &cam.camera_x),
+                               CoordMode::NoCoord => String::from(""),
                            },
                            t = event.get_timestamp()))?;
 
@@ -252,6 +283,88 @@ pub mod aedat_utilities {
         if !write_buf.is_empty() {
             new_csv.write(write_buf.as_slice())?;
         }
+
+        Ok(())
+    }
+
+    pub fn create_video(events: Vec<Event>, filename: &str, config: &VidConfig, cam: &CameraParameters) -> std::io::Result<()> {
+        // Create frame tmp directory if it does not exist
+        match fs::create_dir("frames_tmp") {
+            Ok(_) => println!("Frame temp directory created"),
+            Err(_) => (),
+        }
+
+        // Clear any old files
+        let paths = fs::read_dir("frames_tmp/")?;
+        for path in paths {
+            fs::remove_file(path?.path())?;
+        }
+
+        let on_color = image::Rgb([0u8, 255u8, 0u8]);
+        let off_color = image::Rgb([255u8, 0u8, 0u8]);
+        let black = image::Rgb([0u8, 0u8, 0u8]);
+
+        let mut img = ImageBuffer::from_fn(cam.camera_x as u32, cam.camera_y as u32, |_, _| {
+            image::Rgb([0u8, 0u8, 0u8])
+        });
+
+        // Define end time relative to the first event
+        let mut end_time: i32 = match events.first() {
+            None => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "No events exist")),
+            Some(event) => event.get_timestamp() + config.time_per_frame as i32,
+        };
+        let mut frames_created = 0;
+
+        for event in events {
+            let (x, y) = match cam.camera_type {
+                CameraType::DVS128 => event.get_coords_dvs128(),
+                CameraType::DAVIS240 => event.get_coords_davis240(),
+            };
+
+            img.put_pixel((x - 1) as u32, (y - 1) as u32, match event.get_polarity() {
+                true => on_color,
+                false => off_color,
+            });
+
+            if event.get_timestamp() > end_time {
+                frames_created += 1;
+                if frames_created == config.max_frames {
+                    break;
+                }
+
+                end_time = event.get_timestamp() + config.time_per_frame as i32;
+
+                let count = fs::read_dir("frames_tmp/")?.count();
+
+                img.save(format!("frames_tmp/{}_tmp_{}.png", filename, count))?;
+                // Maybe useful? -> img.into_vec();
+
+                // Reset canvas to black
+                for pixel in img.pixels_mut() {
+                    *pixel = black;
+                }
+            }
+        }
+
+        // Save any remaining events in img
+        let count = std::fs::read_dir("frames_tmp/")?.count();
+        img.save(format!("frames_tmp/{}_tmp_{}.png", filename, count))?;
+
+        // Encode images into a video via python script
+        let output = Command::new("python3")
+            .arg("src/frames_to_vid.py")
+            .arg(format!("{}.avi", filename))
+            .output()
+            .expect("failed to execute process");
+
+        println!("{}", String::from_utf8_lossy(&output.stdout));
+
+        // Clear tmp files
+        let paths = fs::read_dir("frames_tmp/")?;
+        for path in paths {
+            fs::remove_file(path?.path())?;
+        }
+
 
         Ok(())
     }
@@ -299,7 +412,7 @@ mod tests {
 
         // println!("{:?}", aedat_file);
 
-        let header_end =  match find_header_end(&aedat_file) {
+        let header_end = match find_header_end(&aedat_file) {
             Ok(t) => t,
             Err(e) => panic!("{}", e),
         };
@@ -311,7 +424,7 @@ mod tests {
     fn header_end_test_240() {
         let aedat_file = read_test_file("test_files/header_test_240.aedat_test");
 
-        let header_end =  match find_header_end(&aedat_file) {
+        let header_end = match find_header_end(&aedat_file) {
             Ok(t) => t,
             Err(e) => panic!("{}", e),
         };
@@ -330,7 +443,6 @@ mod tests {
 
         assert_eq!(cam.camera_x, 128);
         assert_eq!(cam.camera_y, 128);
-
     }
 
     #[test]
@@ -344,6 +456,5 @@ mod tests {
 
         assert_eq!(cam.camera_x, 240);
         assert_eq!(cam.camera_y, 180);
-
     }
 }
