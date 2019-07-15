@@ -16,7 +16,7 @@ cd aedat_file_reader_rs
 cargo build --release
 ```
 
-### Dependencies
+### External Dependencies
 
 For video exports:
 
@@ -28,16 +28,16 @@ For video exports:
 
 CSV export:
 ```
-cargo run --release [filename] -csv [-p|-np] [-xy|-pn|-nc]
+aedat_reader csv <filename> <-i|-e> <-c|-p|-n>
 ```
 
-* Use -p to include event polarity, -np to exclude event polarity
-* Use -xy to display coordinates, -pn to represent coordinates as pixel number, -nc to exclude coordinate information
+* Use -i to include event polarity, -e to exclude event polarity
+* Use -i to display coordinates as X and Y, -p to represent coordinates as pixel number, -n to exclude coordinate information
 
 
 Video export:
 ```
-cargo run --release [filename] -vid [time_per_frame] [max_frames]
+aedat_reader vid <filename> --frame_time <frameTime> --max_frames <maxFrames>
 ```
 
 * Use time_per_frame to indicate the duration of each frame in microseconds

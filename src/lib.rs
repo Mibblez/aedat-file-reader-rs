@@ -1,4 +1,7 @@
 pub mod aedat_utilities {
+    extern crate image;
+    extern crate clap;
+
     use std::io::prelude::*;
     use std::fs::File;
     use std::convert::TryInto;
@@ -7,7 +10,7 @@ pub mod aedat_utilities {
     use std::process::Command;
     use self::image::ImageBuffer;
 
-    extern crate image;
+    use clap::ArgMatches;
 
     pub struct Event {
         pub bytes: [u8; 8],
@@ -47,26 +50,27 @@ pub mod aedat_utilities {
     }
 
     impl CsvConfig {
-        pub fn new(args: &[String]) -> Result<CsvConfig, std::io::Error> {
-            if args.len() < 4 {
-                return Err(std::io::Error::new(ErrorKind::InvalidInput,
-                                               "Not enough arguments"));
-            }
+        pub fn new(args: &ArgMatches) -> Result<CsvConfig, std::io::Error> {
+            let filename = String::from(args.value_of("filename").unwrap());
 
-            let filename = args[1].clone();
-            let include_polarity = match args[3].as_ref() {
-                "-p" => true,
-                "-np" => false,
-                _ => return Err(std::io::Error::new(ErrorKind::InvalidInput,
-                                                    "Invalid input"))
+            let (include_polarity, exclude_polarity) = (args.is_present("includePolarity"),
+                                                            args.is_present("excludePolarity"));
+
+            let include_polarity = match (include_polarity, exclude_polarity) {
+                (true, _) => true,
+                (_, true) => false,
+                _         => unreachable!()
             };
 
-            let coords = match args[4].as_ref() {
-                "-nc" => CoordMode::NoCoord,
-                "-xy" => CoordMode::XY,
-                "-pn" => CoordMode::PixelNum,
-                _ => return Err(std::io::Error::new(ErrorKind::InvalidInput,
-                                                    "Invalid input"))
+            let (coords, pixel_number, no_spatial) = (args.is_present("coords"),
+                                                            args.is_present("pixelNumber"),
+                                                            args.is_present("noSpatial"));
+
+            let coords = match (coords, pixel_number, no_spatial) {
+                (true, _, _) => CoordMode::XY,
+                (_, true, _) => CoordMode::PixelNum,
+                (_, _, true) => CoordMode::NoCoord,
+                _            => unreachable!(),
             };
 
             Ok(CsvConfig { filename, include_polarity, coords })
@@ -80,26 +84,19 @@ pub mod aedat_utilities {
     }
 
     impl VidConfig {
-        pub fn new(args: &[String]) -> Result<VidConfig, std::io::Error> {
-            if args.len() < 4 {
-                return Err(std::io::Error::new(ErrorKind::InvalidInput,
-                                               "Not enough arguments"));
-            };
+        pub fn new(args: &ArgMatches) -> Result<VidConfig, std::io::Error> {
+            let filename = String::from(args.value_of("filename").unwrap());
 
-            let filename = args[1].clone();
-
-            // TODO: make it easier to know that arg[3] is time per frame (t=5000) or something
-            let time_per_frame: usize = match args[3].clone().parse() {
+            let time_per_frame: usize = match args.value_of("frameTime").unwrap().parse() {
                 Ok(t) => t,
-                Err(e) => panic!("{}", e),
+                Err(_)   => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: frameTime")),
             };
 
-
-            // TODO: make it easier to know that arg[4] is max frames (max_f=1000) or something
-            let max_frames: usize = match args[4].clone().parse() {
+            let max_frames: usize = match args.value_of("maxFrames").unwrap().parse() {
                 Ok(t) => t,
-                Err(e) => panic!("{}", e),
+                Err(_)   => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: maxFrames")),
             };
+
             Ok(VidConfig { filename, time_per_frame, max_frames })
         }
     }
