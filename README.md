@@ -40,7 +40,7 @@ Video export:
 aedat_reader vid <filename> --frame_time <frameTime> --max_frames <maxFrames>
 ```
 
-* Use time_per_frame to indicate the duration of each frame in microseconds
+* Use frame_time to indicate the duration of each frame in microseconds
 * Use max_frames to set a limit on the number of frames in the video
 
 
