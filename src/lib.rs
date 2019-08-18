@@ -18,8 +18,8 @@ pub mod aedat_utilities {
 
     impl Event {
         pub fn get_polarity(&self) -> bool {
-            //Event polarity is located in the fourth bit of the third byte
-            (self.bytes[2] >> 3 & 1) == 1
+            //Event polarity is located in the first bit of the fourth byte
+            (self.bytes[3] & 1) == 1
         }
 
         pub fn get_timestamp(&self) -> i32 {
