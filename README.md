@@ -22,6 +22,7 @@ For video exports:
 
 * [Python3](https://www.python.org/downloads/)
 * OpenCV
+* natsorted
 
 
 ## Usage

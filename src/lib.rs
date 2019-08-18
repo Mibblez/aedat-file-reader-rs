@@ -333,7 +333,7 @@ pub mod aedat_utilities {
 
                 let count = fs::read_dir("frames_tmp/")?.count();
 
-                img.save(format!("frames_tmp/{}_tmp_{}.png", filename, count))?;
+                img.save(format!("frames_tmp/{}_frame{}.png", filename, count))?;
                 // Maybe useful? -> img.into_vec();
 
                 // Reset canvas to black
