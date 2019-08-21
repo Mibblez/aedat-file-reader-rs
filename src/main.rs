@@ -13,7 +13,7 @@ use clap::{App, Arg, SubCommand, ArgGroup, ArgMatches};
 
 fn csv_convert(args: &ArgMatches) {
     let csv_config = aedat_utilities::CsvConfig::new(&args).unwrap_or_else(|err| {
-        eprintln!("Problem parsing arguments: {}", err);
+        eprintln!("Problem parsing arguments\n{}", err);
         process::exit(1);
     });
 
@@ -45,7 +45,7 @@ fn csv_convert(args: &ArgMatches) {
 
 fn vid_convert(args: &ArgMatches) {
     let vid_config = aedat_utilities::VidConfig::new(&args).unwrap_or_else(|err| {
-        eprintln!("Problem parsing arguments: {}", err);
+        eprintln!("Problem parsing arguments\n{}", err);
         process::exit(1);
     });
 
@@ -79,7 +79,7 @@ fn main() {
             .arg(Arg::with_name("filename")
                 .help("The AEDAT file to be processed")
                 .required(true)
-                )
+            )
             .groups(&[
                 ArgGroup::with_name("csv_spatial")
                     .args(&["coords", "pixelNumber", "noSpatial"])

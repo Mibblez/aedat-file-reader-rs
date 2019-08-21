@@ -54,23 +54,23 @@ pub mod aedat_utilities {
             let filename = String::from(args.value_of("filename").unwrap());
 
             let (include_polarity, exclude_polarity) = (args.is_present("includePolarity"),
-                                                            args.is_present("excludePolarity"));
+                                                        args.is_present("excludePolarity"));
 
             let include_polarity = match (include_polarity, exclude_polarity) {
                 (true, _) => true,
                 (_, true) => false,
-                _         => unreachable!()
+                _ => unreachable!()
             };
 
             let (coords, pixel_number, no_spatial) = (args.is_present("coords"),
-                                                            args.is_present("pixelNumber"),
-                                                            args.is_present("noSpatial"));
+                                                      args.is_present("pixelNumber"),
+                                                      args.is_present("noSpatial"));
 
             let coords = match (coords, pixel_number, no_spatial) {
                 (true, _, _) => CoordMode::XY,
                 (_, true, _) => CoordMode::PixelNum,
                 (_, _, true) => CoordMode::NoCoord,
-                _            => unreachable!(),
+                _ => unreachable!(),
             };
 
             Ok(CsvConfig { filename, include_polarity, coords })
@@ -89,12 +89,12 @@ pub mod aedat_utilities {
 
             let time_per_frame: usize = match args.value_of("frameTime").unwrap().parse() {
                 Ok(t) => t,
-                Err(_)   => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: frameTime")),
+                Err(_) => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: frameTime")),
             };
 
             let max_frames: usize = match args.value_of("maxFrames").unwrap().parse() {
                 Ok(t) => t,
-                Err(_)   => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: maxFrames")),
+                Err(_) => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: maxFrames")),
             };
 
             Ok(VidConfig { filename, time_per_frame, max_frames })
@@ -242,7 +242,7 @@ pub mod aedat_utilities {
 
     pub fn create_csv(events: Vec<Event>, filename: &str, config: &CsvConfig, cam: &CameraParameters) -> std::io::Result<()> {
         // Create CSV file and write header
-        let mut new_csv = File::create( format!("{}.csv", filename))?;
+        let mut new_csv = File::create(format!("{}.csv", filename))?;
         let csv_header = config_header(&config);
         new_csv.write(csv_header.as_bytes())?;
 

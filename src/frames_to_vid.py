@@ -1,7 +1,7 @@
 import cv2
 import os
 import sys
-from natsort import natsorted, ns
+from natsort import natsorted
 
 image_folder = 'frames_tmp'
 vid_name = sys.argv[1]
