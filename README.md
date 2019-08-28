@@ -11,8 +11,8 @@ Ensure that the latest version of [Rust](https://www.rust-lang.org/tools/install
 Build the project with:
 
 ```
-git clone https://github.com/Mibblez/aedat_file_reader_rs
-cd aedat_file_reader_rs
+git clone https://github.com/Mibblez/aedat-file-reader-rs
+cd aedat-file-reader-rs
 cargo build --release
 ```
 
@@ -22,7 +22,7 @@ For video exports:
 
 * [Python3](https://www.python.org/downloads/)
 * OpenCV
-* natsorted
+* natsort
 
 
 ## Usage
