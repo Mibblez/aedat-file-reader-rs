@@ -17,9 +17,14 @@ pub mod aedat_utilities {
     }
 
     impl Event {
-        pub fn get_polarity(&self) -> bool {
+        pub fn get_polarity_dvs128(&self) -> bool {
             //Event polarity is located in the first bit of the fourth byte
             (self.bytes[3] & 1) == 1
+        }
+
+        pub fn get_polarity_davis240c(&self) -> bool {
+            //Event polarity is located in the fourth bit of the third byte
+            ((self.bytes[2] >> 3) & 1) == 1
         }
 
         pub fn get_timestamp(&self) -> i32 {
@@ -81,6 +86,8 @@ pub mod aedat_utilities {
         pub filename: String,
         pub time_per_frame: usize,
         pub max_frames: usize,
+        pub exclude_on: bool,
+        pub exclude_off: bool,
     }
 
     impl VidConfig {
@@ -97,7 +104,10 @@ pub mod aedat_utilities {
                 Err(_) => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: maxFrames")),
             };
 
-            Ok(VidConfig { filename, time_per_frame, max_frames })
+            let exclude_on = args.is_present("excludeOnEvents");
+            let exclude_off = args.is_present("excludeOffEvents");
+
+            Ok(VidConfig { filename, time_per_frame, max_frames, exclude_on, exclude_off })
         }
     }
 
@@ -256,10 +266,15 @@ pub mod aedat_utilities {
                 CameraType::DAVIS240 => event.get_coords_davis240(),
             };
 
+            let event_polarity = match cam.camera_type {
+                CameraType::DVS128 => event.get_polarity_dvs128(),
+                CameraType::DAVIS240 => event.get_polarity_davis240c()
+            };
+
             write!(&mut write_buf, "{}",
                    format!("{p}{xy}{t}\n",
                            p = match config.include_polarity {
-                               true => format_polarity(event.get_polarity()),
+                               true => format_polarity(event_polarity),
                                false => String::from(""),
                            },
                            xy = match config.coords {
@@ -318,10 +333,17 @@ pub mod aedat_utilities {
                 CameraType::DAVIS240 => event.get_coords_davis240(),
             };
 
-            img.put_pixel((x - 1) as u32, (y - 1) as u32, match event.get_polarity() {
-                true => on_color,
-                false => off_color,
-            });
+            let event_polarity = match cam.camera_type {
+                CameraType::DVS128 => event.get_polarity_dvs128(),
+                CameraType::DAVIS240 => event.get_polarity_davis240c()
+            };
+
+            if !config.exclude_on && event_polarity == true {
+                img.put_pixel((x - 1) as u32, (y - 1) as u32, on_color);
+            } else if !config.exclude_off && event_polarity == false {
+                img.put_pixel((x - 1) as u32, (y - 1) as u32, off_color);
+            }
+
 
             if event.get_timestamp() > end_time {
                 frames_created += 1;
@@ -348,7 +370,7 @@ pub mod aedat_utilities {
         img.save(format!("frames_tmp/{}_tmp_{}.png", filename, count))?;
 
         // Encode images into a video via python script
-        let output = Command::new("python3")
+        let output = Command::new("python")
             .arg("src/frames_to_vid.py")
             .arg(format!("{}.avi", filename))
             .output()
@@ -377,7 +399,7 @@ mod tests {
         let test_event_struct = Event { bytes: test_event_bytes };
 
         // Get event polarity
-        let polarity = test_event_struct.get_polarity();
+        let polarity = test_event_struct.get_polarity_dvs128();
         assert_eq!(polarity, true);
 
         // Get timestamp

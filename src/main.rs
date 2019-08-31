@@ -134,6 +134,16 @@ fn main() {
                 .long("max_frames")
                 .required(true)
             )
+            .arg(Arg::with_name("excludeOffEvents")
+                .help("Exclude off events in the exported video")
+                .long("exclude_off")
+                .conflicts_with("excludeOnEvents")
+            )
+            .arg(Arg::with_name("excludeOnEvents")
+                .help("Exclude on events in the exported video")
+                .long("exclude_on")
+                .conflicts_with("excludeOffEvents")
+            )
         )
         .get_matches();
 
