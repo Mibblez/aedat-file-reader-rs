@@ -66,7 +66,11 @@ fn vid_convert(args: &ArgMatches) {
     // TODO: should probably fix this mess
     let video_name = Path::new(&vid_config.filename).file_stem().unwrap().to_str().unwrap();
 
-    aedat_utilities::create_video(events, video_name, &vid_config, &cam).unwrap();
+    if args.is_present("timeBasedReconstruction") {
+        aedat_utilities::create_time_based_video(events, video_name, &vid_config, &cam).unwrap();
+    } else {
+        aedat_utilities::create_event_based_video(events, video_name, &vid_config, &cam).unwrap();
+    }
 }
 
 fn main() {
@@ -120,11 +124,24 @@ fn main() {
                 .help("The AEDAT file to be processed")
                 .required(true)
             )
-            .arg(Arg::with_name("frameTime")
-                .help("The duration of each frame in microseconds")
+            .groups(&[
+                ArgGroup::with_name("reconstructionMethod")
+                    .args(&["timeBasedReconstruction", "eventBasedReconstruction"])
+                    .required(true),
+            ])
+            .arg(Arg::with_name("timeBasedReconstruction")
+                .help("Reconstruct frames based on a fixed time window")
+                .long("time_based")
+            )
+            .arg(Arg::with_name("eventBasedReconstruction")
+                .help("Reconstruct frames based on a fixed number of events")
+                .long("event_based")
+            )
+            .arg(Arg::with_name("windowSize")
+                .help("The duration of each frame. Microseconds for time based reconstruction; number of events for event based reconstruction")
                 .takes_value(true)
-                .short("t")
-                .long("frame_time")
+                .short("w")
+                .long("window_size")
                 .required(true)
             )
             .arg(Arg::with_name("maxFrames")

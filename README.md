@@ -25,7 +25,7 @@ For video exports:
 * natsort
 
 
-## Usage
+## Basic Usage
 
 CSV export:
 ```
@@ -33,15 +33,16 @@ aedat_reader csv <filename> <-i|-e> <-c|-p|-n>
 ```
 
 * Use -i to include event polarity, -e to exclude event polarity
-* Use -i to display coordinates as X and Y, -p to represent coordinates as pixel number, -n to exclude coordinate information
+* Use -c to display coordinates as X and Y, -p to represent coordinates as pixel number, -n to exclude coordinate information
 
 
 Video export:
 ```
-aedat_reader vid <filename> --frame_time <frameTime> --max_frames <maxFrames>
+aedat_reader vid <filename> --max_frames <maxFrames> --window_size <windowSize> <--time_based|--event_based>
 ```
 
-* Use frame_time to indicate the duration of each frame in microseconds
+* Use either time_based or event_based to set the frame reconstruction method
+* Use window_size to indicate the duration of each frame (microseconds for time_based; number of events for event_based)
 * Use max_frames to set a limit on the number of frames in the video
 
 

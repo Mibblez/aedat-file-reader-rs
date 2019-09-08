@@ -12,19 +12,22 @@ pub mod aedat_utilities {
 
     use clap::ArgMatches;
 
+    mod colors {
+        pub static RED: [u8;3] = [255u8, 0u8, 0u8];
+        pub static GREEN: [u8;3] = [0u8, 255u8, 0u8];
+        pub static BLACK: [u8;3] = [0u8, 0u8, 0u8];
+    }
+
     pub struct Event {
         pub bytes: [u8; 8],
     }
 
     impl Event {
-        pub fn get_polarity_dvs128(&self) -> bool {
-            //Event polarity is located in the first bit of the fourth byte
-            (self.bytes[3] & 1) == 1
-        }
-
-        pub fn get_polarity_davis240c(&self) -> bool {
-            //Event polarity is located in the fourth bit of the third byte
-            ((self.bytes[2] >> 3) & 1) == 1
+        pub fn get_polarity(&self, cam_type: &CameraType) -> bool {
+            match cam_type {
+                CameraType::DVS128 => (self.bytes[3] & 1) == 1, // first bit of the fourth byte
+                CameraType::DAVIS240 => ((self.bytes[2] >> 3) & 1) == 1, // fourth bit of the third byte
+            }
         }
 
         pub fn get_timestamp(&self) -> i32 {
@@ -35,16 +38,20 @@ pub mod aedat_utilities {
                 ((self.bytes[4] as u32) << 24)) as i32
         }
 
-        pub fn get_coords_dvs128(&self) -> (u8, u8) {
-            // DVS128   (X = width - bits33-39 ) ; (Y = height - bits40-46 ) [bytes 2-3]
-            (128 - ((self.bytes[3] >> 1) & 0b1111111) as u8, // X coordinate
-             128 - (self.bytes[2] & 0b1111111) as u8)        // Y coordinate
-        }
+        pub fn get_coords(&self, cam_type: &CameraType) -> (u8, u8) {
+            match cam_type {
+                CameraType::DVS128 => {
+                    // DVS128   (X = width - bits33-39 ) ; (Y = height - bits40-46 ) [bytes 2-3]
+                    (128 - ((self.bytes[3] >> 1) & 0b1111111) as u8, // X coordinate
+                    128 - (self.bytes[2] & 0b1111111) as u8)        // Y coordinate
+                },
+                CameraType::DAVIS240 => {
+                    // DAVIS240  (X = width - bits51-44) ; (Y = height - bits60-54) [bytes 0-2]
+                    (240 - (((self.bytes[1] << 4) & 0b11110000) + ((self.bytes[2] >> 4) & 0b1111)) as u8,// X coordinate
+                    180 - (((self.bytes[0] << 2) & 0b01111100) + ((self.bytes[1] >> 6) & 0b11)) as u8)  // Y coordinate
+                }
+            }
 
-        pub fn get_coords_davis240(&self) -> (u8, u8) {
-            // DAVIS240  (X = width - bits51-44) ; (Y = height - bits60-54) [bytes 0-2]
-            (240 - (((self.bytes[1] << 4) & 0b11110000) + ((self.bytes[2] >> 4) & 0b1111)) as u8,// X coordinate
-             180 - (((self.bytes[0] << 2) & 0b01111100) + ((self.bytes[1] >> 6) & 0b11)) as u8)  // Y coordinate
         }
     }
 
@@ -84,7 +91,7 @@ pub mod aedat_utilities {
 
     pub struct VidConfig {
         pub filename: String,
-        pub time_per_frame: usize,
+        pub window_size: usize,
         pub max_frames: usize,
         pub exclude_on: bool,
         pub exclude_off: bool,
@@ -94,7 +101,7 @@ pub mod aedat_utilities {
         pub fn new(args: &ArgMatches) -> Result<VidConfig, std::io::Error> {
             let filename = String::from(args.value_of("filename").unwrap());
 
-            let time_per_frame: usize = match args.value_of("frameTime").unwrap().parse() {
+            let window_size: usize = match args.value_of("windowSize").unwrap().parse() {
                 Ok(t) => t,
                 Err(_) => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: frameTime")),
             };
@@ -107,7 +114,7 @@ pub mod aedat_utilities {
             let exclude_on = args.is_present("excludeOnEvents");
             let exclude_off = args.is_present("excludeOffEvents");
 
-            Ok(VidConfig { filename, time_per_frame, max_frames, exclude_on, exclude_off })
+            Ok(VidConfig { filename, window_size, max_frames, exclude_on, exclude_off })
         }
     }
 
@@ -188,7 +195,6 @@ pub mod aedat_utilities {
         return Err(std::io::Error::new(ErrorKind::NotFound, "End of header not found"));
     }
 
-
     pub fn get_events(end_of_header_index: u32, aedat_file: &Vec<u8>) -> Result<Vec<Event>, std::io::Error> {
         // Size of an event in bytes
         const EVENT_SIZE: usize = 8;
@@ -261,15 +267,8 @@ pub mod aedat_utilities {
         let mut write_buf = Vec::with_capacity(BUF_PREALLOCATE_SIZE);
 
         for event in events {
-            let (x, y) = match cam.camera_type {
-                CameraType::DVS128 => event.get_coords_dvs128(),
-                CameraType::DAVIS240 => event.get_coords_davis240(),
-            };
-
-            let event_polarity = match cam.camera_type {
-                CameraType::DVS128 => event.get_polarity_dvs128(),
-                CameraType::DAVIS240 => event.get_polarity_davis240c()
-            };
+            let (x, y) = event.get_coords(&cam.camera_type);
+            let event_polarity = event.get_polarity(&cam.camera_type);
 
             write!(&mut write_buf, "{}",
                    format!("{p}{xy}{t}\n",
@@ -299,51 +298,45 @@ pub mod aedat_utilities {
         Ok(())
     }
 
-    pub fn create_video(events: Vec<Event>, filename: &str, config: &VidConfig, cam: &CameraParameters) -> std::io::Result<()> {
+    fn prep_frame_tmp_dir(tmp_dir: &str) -> std::io::Result<()> {
         // Create frame tmp directory if it does not exist
-        match fs::create_dir("frames_tmp") {
+        match fs::create_dir(tmp_dir) {
             Ok(_) => println!("Frame temp directory created"),
             Err(_) => (),
         }
-
         // Clear any old files
-        let paths = fs::read_dir("frames_tmp/")?;
+        let paths = fs::read_dir(tmp_dir)?;
         for path in paths {
             fs::remove_file(path?.path())?;
         }
 
-        let on_color = image::Rgb([0u8, 255u8, 0u8]);
-        let off_color = image::Rgb([255u8, 0u8, 0u8]);
-        let black = image::Rgb([0u8, 0u8, 0u8]);
+        Ok(())
+    }
 
+    pub fn create_time_based_video(events: Vec<Event>, filename: &str, config: &VidConfig, cam: &CameraParameters) -> std::io::Result<()> {
+        let frame_tmp_dir = ".frames_tmp";
+
+        prep_frame_tmp_dir(&frame_tmp_dir)?;
+
+        let on_color = image::Rgb(colors::GREEN);
+        let off_color = image::Rgb(colors::RED);
+        let black = image::Rgb(colors::BLACK);
+
+        // Init canvas
         let mut img = ImageBuffer::from_fn(cam.camera_x as u32, cam.camera_y as u32, |_, _| {
-            image::Rgb([0u8, 0u8, 0u8])
+            image::Rgb(colors::BLACK)
         });
 
         // Define end time relative to the first event
         let mut end_time: i32 = match events.first() {
             None => return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "No events exist")),
-            Some(event) => event.get_timestamp() + config.time_per_frame as i32,
+            Some(event) => event.get_timestamp() + config.window_size as i32,
         };
         let mut frames_created = 0;
 
         for event in events {
-            let (x, y) = match cam.camera_type {
-                CameraType::DVS128 => event.get_coords_dvs128(),
-                CameraType::DAVIS240 => event.get_coords_davis240(),
-            };
-
-            let event_polarity = match cam.camera_type {
-                CameraType::DVS128 => event.get_polarity_dvs128(),
-                CameraType::DAVIS240 => event.get_polarity_davis240c()
-            };
-
-            if !config.exclude_on && event_polarity == true {
-                img.put_pixel((x - 1) as u32, (y - 1) as u32, on_color);
-            } else if !config.exclude_off && event_polarity == false {
-                img.put_pixel((x - 1) as u32, (y - 1) as u32, off_color);
-            }
-
+            // Place a pixel on the image canvas with the appropriate color & position
+            place_pixel(config, cam, &on_color, &off_color, &mut img, &event);
 
             if event.get_timestamp() > end_time {
                 frames_created += 1;
@@ -351,11 +344,11 @@ pub mod aedat_utilities {
                     break;
                 }
 
-                end_time = event.get_timestamp() + config.time_per_frame as i32;
+                end_time = event.get_timestamp() + config.window_size as i32;
 
-                let count = fs::read_dir("frames_tmp/")?.count();
+                let count = fs::read_dir(frame_tmp_dir)?.count();
 
-                img.save(format!("frames_tmp/{}_frame{}.png", filename, count))?;
+                img.save(format!("{}/{}_frame{}.png", frame_tmp_dir, filename, count))?;
                 // Maybe useful? -> img.into_vec();
 
                 // Reset canvas to black
@@ -366,11 +359,81 @@ pub mod aedat_utilities {
         }
 
         // Save any remaining events in img
-        let count = std::fs::read_dir("frames_tmp/")?.count();
-        img.save(format!("frames_tmp/{}_tmp_{}.png", filename, count))?;
+        let count = std::fs::read_dir(frame_tmp_dir)?.count();
+        img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir, filename, count))?;
 
+        encode_frames(&filename, &frame_tmp_dir)?;
+
+        Ok(())
+    }
+
+    pub fn create_event_based_video(events: Vec<Event>, filename: &str, config: &VidConfig, cam: &CameraParameters) -> std::io::Result<()> {
+        let frame_tmp_dir = ".frames_tmp";
+
+        prep_frame_tmp_dir(&frame_tmp_dir)?;
+
+        let on_color = image::Rgb(colors::GREEN);
+        let off_color = image::Rgb(colors::RED);
+        let black = image::Rgb(colors::BLACK);
+
+        // Init canvas
+        let mut img = ImageBuffer::from_fn(cam.camera_x as u32, cam.camera_y as u32, |_, _| {
+            image::Rgb(colors::BLACK)
+        });
+
+        let mut events_in_current_frame = 0;
+        let max_events = config.window_size;
+        let mut frames_created = 0;
+
+        for event in events {
+            // Place a pixel on the image canvas with the appropriate color & position
+            place_pixel(config, cam, &on_color, &off_color, &mut img, &event);
+            events_in_current_frame += 1;
+
+            if events_in_current_frame == max_events {
+                frames_created += 1;
+                events_in_current_frame = 0;
+
+                if frames_created == config.max_frames {
+                    break;
+                }
+
+                let count = fs::read_dir(frame_tmp_dir)?.count();
+
+                img.save(format!("{}/{}_frame{}.png", frame_tmp_dir, filename, count))?;
+                // Maybe useful? -> img.into_vec();
+
+                // Reset canvas to black
+                for pixel in img.pixels_mut() {
+                    *pixel = black;
+                }
+            }
+        }
+
+        // Save any remaining events in img
+        let count = std::fs::read_dir(frame_tmp_dir)?.count();
+        img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir, filename, count))?;
+
+        encode_frames(&filename, &frame_tmp_dir)?;
+
+        Ok(())
+    }
+
+    fn place_pixel(config: &VidConfig, cam: &CameraParameters, on_color: &image::Rgb<u8>, off_color: &image::Rgb<u8>, img: &mut ImageBuffer<image::Rgb<u8>, Vec<u8>>, event: &Event) {
+        let (x, y) = event.get_coords(&cam.camera_type);
+
+        let event_polarity = event.get_polarity(&cam.camera_type);
+
+        if !config.exclude_on && event_polarity == true {
+            img.put_pixel((x - 1) as u32, (y - 1) as u32, *on_color);
+        } else if !config.exclude_off && event_polarity == false {
+            img.put_pixel((x - 1) as u32, (y - 1) as u32, *off_color);
+        }
+    }
+
+    fn encode_frames(filename: &str, frame_tmp_dir: &str) -> std::io::Result<()> {
         // Encode images into a video via python script
-        let output = Command::new("python")
+        let output = Command::new("python3")
             .arg("src/frames_to_vid.py")
             .arg(format!("{}.avi", filename))
             .output()
@@ -379,14 +442,14 @@ pub mod aedat_utilities {
         println!("{}", String::from_utf8_lossy(&output.stdout));
 
         // Clear tmp files
-        let paths = fs::read_dir("frames_tmp/")?;
+        let paths = fs::read_dir(frame_tmp_dir)?;
         for path in paths {
             fs::remove_file(path?.path())?;
         }
 
-
         Ok(())
     }
+
 }
 
 #[cfg(test)]
@@ -399,7 +462,7 @@ mod tests {
         let test_event_struct = Event { bytes: test_event_bytes };
 
         // Get event polarity
-        let polarity = test_event_struct.get_polarity_dvs128();
+        let polarity = test_event_struct.get_polarity(&CameraType::DVS128);
         assert_eq!(polarity, true);
 
         // Get timestamp
@@ -407,7 +470,7 @@ mod tests {
         assert_eq!(timestamp, -1672025907);
 
         // Get XY coordinates
-        let (x, y) = test_event_struct.get_coords_dvs128();
+        let (x, y) = test_event_struct.get_coords(&CameraType::DVS128);
         assert_eq!(x, 13);
         assert_eq!(y, 72);
     }

@@ -3,7 +3,7 @@ import os
 import sys
 from natsort import natsorted
 
-image_folder = 'frames_tmp'
+image_folder = '.frames_tmp'
 vid_name = sys.argv[1]
 
 images = [img for img in os.listdir(image_folder) if img.endswith(".png")]
