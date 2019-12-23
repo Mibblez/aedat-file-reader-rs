@@ -8,7 +8,9 @@ pub mod aedat_utilities {
     use std::io::ErrorKind;
     use std::fs;
     use std::process::Command;
-    use self::image::ImageBuffer;
+
+    use image::ImageBuffer;
+    use image::Rgb;
 
     use clap::ArgMatches;
 
@@ -145,6 +147,18 @@ pub mod aedat_utilities {
         }
     }
 
+    pub struct Frame {
+        pub img: ImageBuffer<Rgb<u8>, Vec<u8>>,
+        pub count: usize,
+    }
+
+    impl Frame {
+        pub fn save_frame(&self, frame_tmp_dir: &str, filename: &str) -> std::io::Result<()> {
+            self.img.save(format!("{}/{}_frame{}.png", frame_tmp_dir, filename, self.count))?;
+            Ok(())
+        }
+    }
+
     pub fn find_line_in_header(aedat_file: &Vec<u8>, search: &str) -> Result<String, std::io::Error> {
         // Grab 0.5MB or the entire file if too small
         let header = match aedat_file {
@@ -263,8 +277,8 @@ pub mod aedat_utilities {
         new_csv.write(csv_header.as_bytes())?;
 
         // Create write buffer and preallocate space
-        const BUF_PREALLOCATE_SIZE: usize = 150000;
-        let mut write_buf = Vec::with_capacity(BUF_PREALLOCATE_SIZE);
+        const BUF_SIZE: usize = 150000;
+        let mut write_buf = Vec::with_capacity(BUF_SIZE);
 
         for event in events {
             let (x, y) = event.get_coords(&cam.camera_type);
@@ -284,7 +298,7 @@ pub mod aedat_utilities {
                            t = event.get_timestamp()))?;
 
             // Write events to disk once enough have been collected
-            if write_buf.len() >= BUF_PREALLOCATE_SIZE {
+            if write_buf.len() >= BUF_SIZE {
                 new_csv.write(write_buf.as_slice())?;
                 write_buf.clear();
             }
@@ -322,6 +336,9 @@ pub mod aedat_utilities {
         let off_color = image::Rgb(colors::RED);
         let black = image::Rgb(colors::BLACK);
 
+        const BUF_SIZE: usize = 150;
+        let mut write_buf: Vec<Frame> = Vec::with_capacity(BUF_SIZE);
+
         // Init canvas
         let mut img = ImageBuffer::from_fn(cam.camera_x as u32, cam.camera_y as u32, |_, _| {
             image::Rgb(colors::BLACK)
@@ -346,10 +363,21 @@ pub mod aedat_utilities {
 
                 end_time = event.get_timestamp() + config.window_size as i32;
 
-                let count = fs::read_dir(frame_tmp_dir)?.count();
+                let count = fs::read_dir(frame_tmp_dir)?.count() + write_buf.len();
 
-                img.save(format!("{}/{}_frame{}.png", frame_tmp_dir, filename, count))?;
-                // Maybe useful? -> img.into_vec();
+                // Save image to buffer
+                write_buf.push(Frame {
+                    img: img.clone(),
+                    count,
+                });
+
+                // Write all frames to disk once enough have been saved to buffer
+                if write_buf.len() == BUF_SIZE {
+                    for frame in &write_buf {
+                        frame.save_frame(&frame_tmp_dir, &filename)?;
+                    }
+                    write_buf.clear();
+                }
 
                 // Reset canvas to black
                 for pixel in img.pixels_mut() {
@@ -358,7 +386,12 @@ pub mod aedat_utilities {
             }
         }
 
-        // Save any remaining events in img
+        // Save any remaining frames in buffer
+        for frame in &write_buf {
+            frame.save_frame(&frame_tmp_dir, &filename)?;
+        }
+
+        // Save any remaining events in current working img
         let count = std::fs::read_dir(frame_tmp_dir)?.count();
         img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir, filename, count))?;
 
@@ -375,6 +408,9 @@ pub mod aedat_utilities {
         let on_color = image::Rgb(colors::GREEN);
         let off_color = image::Rgb(colors::RED);
         let black = image::Rgb(colors::BLACK);
+
+        const BUF_SIZE: usize = 150;
+        let mut write_buf: Vec<Frame> = Vec::with_capacity(BUF_SIZE);
 
         // Init canvas
         let mut img = ImageBuffer::from_fn(cam.camera_x as u32, cam.camera_y as u32, |_, _| {
@@ -398,10 +434,21 @@ pub mod aedat_utilities {
                     break;
                 }
 
-                let count = fs::read_dir(frame_tmp_dir)?.count();
+                let count = fs::read_dir(frame_tmp_dir)?.count() + write_buf.len();
 
-                img.save(format!("{}/{}_frame{}.png", frame_tmp_dir, filename, count))?;
-                // Maybe useful? -> img.into_vec();
+                // Save image to buffer
+                write_buf.push(Frame {
+                    img: img.clone(),
+                    count,
+                });
+
+                // Write all frames to disk once enough have been saved to buffer
+                if write_buf.len() == BUF_SIZE {
+                    for frame in &write_buf {
+                        frame.save_frame(&frame_tmp_dir, &filename)?;
+                    }
+                    write_buf.clear();
+                }
 
                 // Reset canvas to black
                 for pixel in img.pixels_mut() {
@@ -410,7 +457,12 @@ pub mod aedat_utilities {
             }
         }
 
-        // Save any remaining events in img
+        // Save any remaining frames in buffer
+        for frame in &write_buf {
+            frame.save_frame(&frame_tmp_dir, &filename)?;
+        }
+
+        // Save any remaining events in current working img
         let count = std::fs::read_dir(frame_tmp_dir)?.count();
         img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir, filename, count))?;
 
