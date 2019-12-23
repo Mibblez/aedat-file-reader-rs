@@ -439,7 +439,28 @@ pub mod aedat_utilities {
             .output()
             .expect("failed to execute process");
 
-        println!("{}", String::from_utf8_lossy(&output.stdout));
+        let python_msg = String::from_utf8_lossy(&output.stdout).to_string();
+
+        // Check for errors in python script
+        if &python_msg != "0" {
+            // Clear tmp files
+            let paths = fs::read_dir(frame_tmp_dir)?;
+            for path in paths {
+                fs::remove_file(path?.path())?;
+            }
+
+            match python_msg.as_ref() {
+                "1" => return Err(std::io::Error::new(
+                    ErrorKind::Other, "Unmet Python dependency in frames_to_vid.py"
+                )),
+                "2" => return Err(std::io::Error::new(
+                    ErrorKind::Other, "frames_to_vid.py must be run with Python3"
+                )),
+                _ => return Err(std::io::Error::new(
+                    ErrorKind::Other, "Unknown error in frames_to_vid.py"
+                )),
+            }
+        }
 
         // Clear tmp files
         let paths = fs::read_dir(frame_tmp_dir)?;

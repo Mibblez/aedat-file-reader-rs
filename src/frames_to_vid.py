@@ -1,7 +1,18 @@
-import cv2
 import os
 import sys
-from natsort import natsorted
+
+try:
+    from natsort import natsorted
+    import cv2
+except ImportError:
+    print('1', end='')
+    raise ImportError('Unmet dependencies')
+
+# Make sure script is running in python3
+python_version = sys.version_info[0]
+if python_version != 3:
+    print('2', end='')
+    raise Exception('Script must run with python3')
 
 image_folder = '.frames_tmp'
 vid_name = sys.argv[1]
@@ -21,4 +32,4 @@ for image in natsorted(images, key=lambda y: y.lower()):
 cv2.destroyAllWindows()
 video.release()
 
-print('Export complete')
+print('0', end='')
