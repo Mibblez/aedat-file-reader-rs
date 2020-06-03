@@ -149,7 +149,6 @@ fn main() {
                 .takes_value(true)
                 .short("m")
                 .long("max_frames")
-                .required(true)
             )
             .arg(Arg::with_name("excludeOffEvents")
                 .help("Exclude off events in the exported video")
@@ -161,13 +160,24 @@ fn main() {
                 .long("exclude_on")
                 .conflicts_with("excludeOffEvents")
             )
+            .arg(Arg::with_name("keepFrames")
+                .help("Keep the reconstructed frames")
+                .short("k")
+                .long("keep_frames")
+            )
+            .arg(Arg::with_name("omitVideo")
+                .help("Do not reconstruct a video")
+                .short("o")
+                .long("omit_video")
+                .requires("keepFrames")
+            )
         )
         .get_matches();
 
     match matches.subcommand() {
         ("csv", Some(csv_matches)) => csv_convert(csv_matches),
         ("vid", Some(vid_matches)) => vid_convert(vid_matches),
-        _ => unreachable!(),
+        _ => println!("Subcommand 'vid' or 'csv' required."),
     }
 
 }

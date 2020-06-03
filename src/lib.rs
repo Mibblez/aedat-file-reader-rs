@@ -97,6 +97,8 @@ pub mod aedat_utilities {
         pub max_frames: usize,
         pub exclude_on: bool,
         pub exclude_off: bool,
+        pub keep_frames: bool,
+        pub omit_video: bool,
     }
 
     impl VidConfig {
@@ -108,15 +110,21 @@ pub mod aedat_utilities {
                 Err(_) => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: frameTime")),
             };
 
-            let max_frames: usize = match args.value_of("maxFrames").unwrap().parse() {
-                Ok(t) => t,
-                Err(_) => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: maxFrames")),
-            };
+             let max_frames: usize =
+                 if args.is_present("maxFrames") {
+                    match args.value_of("maxFrames").unwrap().parse() {
+                        Ok(t) => t,
+                        Err(_) => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: maxFrames")),
+                    }
+                 } else { std::usize::MAX };
 
             let exclude_on = args.is_present("excludeOnEvents");
             let exclude_off = args.is_present("excludeOffEvents");
 
-            Ok(VidConfig { filename, window_size, max_frames, exclude_on, exclude_off })
+            let keep_frames = args.is_present("keepFrames");
+            let omit_video = args.is_present("omitVideo");
+
+            Ok(VidConfig { filename, window_size, max_frames, exclude_on, exclude_off, keep_frames, omit_video })
         }
     }
 
@@ -315,7 +323,7 @@ pub mod aedat_utilities {
     fn prep_frame_tmp_dir(tmp_dir: &str) -> std::io::Result<()> {
         // Create frame tmp directory if it does not exist
         match fs::create_dir(tmp_dir) {
-            Ok(_) => println!("Frame temp directory created"),
+            Ok(_) => (),
             Err(_) => (),
         }
         // Clear any old files
@@ -328,7 +336,7 @@ pub mod aedat_utilities {
     }
 
     pub fn create_time_based_video(events: Vec<Event>, filename: &str, config: &VidConfig, cam: &CameraParameters) -> std::io::Result<()> {
-        let frame_tmp_dir = ".frames_tmp";
+        let frame_tmp_dir = if config.keep_frames { filename } else { ".frames_tmp" };
 
         prep_frame_tmp_dir(&frame_tmp_dir)?;
 
@@ -395,13 +403,19 @@ pub mod aedat_utilities {
         let count = std::fs::read_dir(frame_tmp_dir)?.count();
         img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir, filename, count))?;
 
-        encode_frames(&filename, &frame_tmp_dir)?;
+        if !config.omit_video {
+            encode_frames(&filename, &frame_tmp_dir)?;
+        }
+
+        if !config.keep_frames {
+            prep_frame_tmp_dir(&frame_tmp_dir)?;
+        }
 
         Ok(())
     }
 
     pub fn create_event_based_video(events: Vec<Event>, filename: &str, config: &VidConfig, cam: &CameraParameters) -> std::io::Result<()> {
-        let frame_tmp_dir = ".frames_tmp";
+        let frame_tmp_dir = if config.keep_frames { filename } else { ".frames_tmp" };
 
         prep_frame_tmp_dir(&frame_tmp_dir)?;
 
@@ -466,7 +480,13 @@ pub mod aedat_utilities {
         let count = std::fs::read_dir(frame_tmp_dir)?.count();
         img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir, filename, count))?;
 
-        encode_frames(&filename, &frame_tmp_dir)?;
+        if !config.omit_video {
+            encode_frames(&filename, &frame_tmp_dir)?;
+        }
+
+        if !config.keep_frames {
+            prep_frame_tmp_dir(&frame_tmp_dir)?;
+        }
 
         Ok(())
     }
@@ -488,6 +508,7 @@ pub mod aedat_utilities {
         let output = Command::new("python3")
             .arg("src/frames_to_vid.py")
             .arg(format!("{}.avi", filename))
+            .arg(frame_tmp_dir)
             .output()
             .expect("failed to execute process");
 
@@ -501,25 +522,18 @@ pub mod aedat_utilities {
                 fs::remove_file(path?.path())?;
             }
 
-            match python_msg.as_ref() {
-                "1" => return Err(std::io::Error::new(
+            return match python_msg.as_ref() {
+                "1" => Err(std::io::Error::new(
                     ErrorKind::Other, "Unmet Python dependency in frames_to_vid.py"
                 )),
-                "2" => return Err(std::io::Error::new(
+                "2" => Err(std::io::Error::new(
                     ErrorKind::Other, "frames_to_vid.py must be run with Python3"
                 )),
-                _ => return Err(std::io::Error::new(
+                _ => Err(std::io::Error::new(
                     ErrorKind::Other, "Unknown error in frames_to_vid.py"
                 )),
             }
         }
-
-        // Clear tmp files
-        let paths = fs::read_dir(frame_tmp_dir)?;
-        for path in paths {
-            fs::remove_file(path?.path())?;
-        }
-
         Ok(())
     }
 

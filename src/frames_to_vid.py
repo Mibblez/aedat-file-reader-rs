@@ -14,8 +14,8 @@ if python_version != 3:
     print('2', end='')
     raise Exception('Script must run with python3')
 
-image_folder = '.frames_tmp'
 vid_name = sys.argv[1]
+image_folder = sys.argv[2]
 
 images = [img for img in os.listdir(image_folder) if img.endswith(".png")]
 frame = cv2.imread(os.path.join(image_folder, images[0]))
