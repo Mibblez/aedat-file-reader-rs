@@ -61,6 +61,7 @@ pub mod aedat_utilities {
         pub filename: String,
         pub include_polarity: bool,
         pub coords: CoordMode,
+        pub offset_time: bool,
     }
 
     impl CsvConfig {
@@ -87,7 +88,9 @@ pub mod aedat_utilities {
                 _ => unreachable!(),
             };
 
-            Ok(CsvConfig { filename, include_polarity, coords })
+            let offset_time = args.is_present("offsetTime");
+
+            Ok(CsvConfig { filename, include_polarity, coords, offset_time})
         }
     }
 
@@ -288,6 +291,11 @@ pub mod aedat_utilities {
         const BUF_SIZE: usize = 150000;
         let mut write_buf = Vec::with_capacity(BUF_SIZE);
 
+        let time_offset = match config.offset_time {
+            true => events[0].get_timestamp(),
+            false => 0,
+        };
+
         for event in events {
             let (x, y) = event.get_coords(&cam.camera_type);
             let event_polarity = event.get_polarity(&cam.camera_type);
@@ -303,7 +311,9 @@ pub mod aedat_utilities {
                                CoordMode::PixelNum => format_coords_pn(x, y, &cam.camera_x),
                                CoordMode::NoCoord => String::from(""),
                            },
-                           t = event.get_timestamp()))?;
+                           t = event.get_timestamp() - time_offset,
+                        )
+            )?;
 
             // Write events to disk once enough have been collected
             if write_buf.len() >= BUF_SIZE {
