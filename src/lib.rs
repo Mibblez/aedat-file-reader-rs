@@ -5,7 +5,7 @@ pub mod aedat_utilities {
     use std::io::prelude::*;
     use std::fs::File;
     use std::convert::TryInto;
-    //use std::ffi::OsString;
+    use std::io::Error;
     use std::io::ErrorKind;
     use std::fs;
     use std::path::{PathBuf, Path};
@@ -173,11 +173,19 @@ pub mod aedat_utilities {
 
     impl Frame {
         pub fn save_frame(&self, frame_tmp_dir: &PathBuf, filename: &str) -> std::io::Result<()> {
-            self.img.save(format!("{}/{}_frame{}.png",
+            let result = self.img.save(format!("{}/{}_frame{}.png",
                 frame_tmp_dir.to_string_lossy(),
                 filename,
-                self.count))?;
-            Ok(())
+                self.count));
+            
+            if let Ok(()) = result {
+                Ok(())
+            } else {
+                Err(Error::new(ErrorKind::Other, "Could not save frame"))
+            }
+            
+
+            // Ok(())
         }
     }
 
@@ -424,7 +432,7 @@ pub mod aedat_utilities {
 
         // Save any remaining events in current working img
         let count = std::fs::read_dir(&frame_tmp_dir)?.count();
-        img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir.display(), video_name, count))?;
+        img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir.display(), video_name, count)).unwrap();
 
         if !config.omit_video {
             //encode_frames(&video_name, &frame_tmp_dir)?;
@@ -503,7 +511,7 @@ pub mod aedat_utilities {
 
         // Save any remaining events in current working img
         let count = std::fs::read_dir(&frame_tmp_dir)?.count();
-        img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir.display(), video_name, count))?;
+        img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir.display(), video_name, count)).unwrap();
 
         if !config.omit_video {
             encode_frames(&config.filename.to_string_lossy(), &frame_tmp_dir)?;
