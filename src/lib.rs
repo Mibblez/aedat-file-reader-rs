@@ -50,18 +50,22 @@ pub mod aedat_utilities {
                 CameraType::DVS128 => {
                     // DVS128   (X = width - bits33-39 ) ; (Y = height - bits40-46 ) [bytes 2-3]
                     (
-                        128 - ((self.bytes[3] >> 1) & 0b111_1111) as u8, // X coordinate
+                        // X coordinate
+                        128 - ((self.bytes[3] >> 1) & 0b111_1111) as u8,
+                        // Y coordinate
                         128 - (self.bytes[2] & 0b111_1111) as u8,
-                    ) // Y coordinate
+                    )
                 }
                 CameraType::DAVIS240 => {
                     // DAVIS240  (X = width - bits51-44) ; (Y = height - bits60-54) [bytes 0-2]
                     (
+                        // X coordinate
                         240 - (((self.bytes[1] << 4) & 0b1111_0000)
-                            + ((self.bytes[2] >> 4) & 0b1111)) as u8, // X coordinate
+                            + ((self.bytes[2] >> 4) & 0b1111)) as u8,
+                        // Y coordinate
                         180 - (((self.bytes[0] << 2) & 0b0111_1100) + ((self.bytes[1] >> 6) & 0b11))
                             as u8,
-                    ) // Y coordinate
+                    )
                 }
             }
         }
