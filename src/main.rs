@@ -5,11 +5,12 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::process;
+use std::time::Instant;
 
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 
 fn csv_convert(args: &ArgMatches) {
-    let csv_config = aedat_utilities::CsvConfig::new(&args).unwrap_or_else(|err| {
+    let csv_config = aedat_utilities::CsvConfig::new(args).unwrap_or_else(|err| {
         eprintln!("Problem parsing arguments\n{}", err);
         process::exit(1);
     });
@@ -25,18 +26,17 @@ fn csv_convert(args: &ArgMatches) {
     let header_end = aedat_utilities::find_header_end(&aedat_file).unwrap();
     let events = aedat_utilities::get_events(header_end, &aedat_file).unwrap();
 
-    use std::time::Instant;
     let now = Instant::now();
 
     aedat_utilities::create_csv(events, &csv_config, &cam).unwrap();
 
     let elapsed = now.elapsed();
-    let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1_000_000_000.0);
+    let sec = (elapsed.as_secs() as f64) + (f64::from(elapsed.subsec_nanos()) / 1_000_000_000.0);
     println!("Export time: {} seconds", sec);
 }
 
 fn vid_convert(args: &ArgMatches) {
-    let vid_config = aedat_utilities::VidConfig::new(&args).unwrap_or_else(|err| {
+    let vid_config = aedat_utilities::VidConfig::new(args).unwrap_or_else(|err| {
         eprintln!("Problem parsing arguments\n{}", err);
         process::exit(1);
     });
@@ -61,7 +61,7 @@ fn vid_convert(args: &ArgMatches) {
 }
 
 fn main() {
-    let matches = Command::new("pacman")
+    let matches = Command::new("aedat_reader")
         .about("Program for converting AEDAT files to CSV or video.")
         .subcommand_required(true)
         .arg_required_else_help(true)

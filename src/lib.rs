@@ -27,6 +27,7 @@ pub mod aedat_utilities {
     }
 
     impl Event {
+        #[must_use]
         pub fn get_polarity(&self, cam_type: &CameraType) -> bool {
             match cam_type {
                 CameraType::DVS128 => (self.bytes[3] & 1) == 1, // first bit of the fourth byte
@@ -34,29 +35,31 @@ pub mod aedat_utilities {
             }
         }
 
+        #[must_use]
         pub fn get_timestamp(&self) -> i32 {
             // Timestamp is found in the last four bytes
-            (((self.bytes[7] as u32) << 0)
-                + ((self.bytes[6] as u32) << 8)
-                + ((self.bytes[5] as u32) << 16)
-                + ((self.bytes[4] as u32) << 24)) as i32
+            (i32::from(self.bytes[7]))
+                + ((i32::from(self.bytes[6])) << 8)
+                + ((i32::from(self.bytes[5])) << 16)
+                + ((i32::from(self.bytes[4])) << 24)
         }
 
+        #[must_use]
         pub fn get_coords(&self, cam_type: &CameraType) -> (u8, u8) {
             match cam_type {
                 CameraType::DVS128 => {
                     // DVS128   (X = width - bits33-39 ) ; (Y = height - bits40-46 ) [bytes 2-3]
                     (
-                        128 - ((self.bytes[3] >> 1) & 0b1111111) as u8, // X coordinate
-                        128 - (self.bytes[2] & 0b1111111) as u8,
+                        128 - ((self.bytes[3] >> 1) & 0b111_1111) as u8, // X coordinate
+                        128 - (self.bytes[2] & 0b111_1111) as u8,
                     ) // Y coordinate
                 }
                 CameraType::DAVIS240 => {
                     // DAVIS240  (X = width - bits51-44) ; (Y = height - bits60-54) [bytes 0-2]
                     (
-                        240 - (((self.bytes[1] << 4) & 0b11110000)
+                        240 - (((self.bytes[1] << 4) & 0b1111_0000)
                             + ((self.bytes[2] >> 4) & 0b1111)) as u8, // X coordinate
-                        180 - (((self.bytes[0] << 2) & 0b01111100) + ((self.bytes[1] >> 6) & 0b11))
+                        180 - (((self.bytes[0] << 2) & 0b0111_1100) + ((self.bytes[1] >> 6) & 0b11))
                             as u8,
                     ) // Y coordinate
                 }
@@ -73,7 +76,7 @@ pub mod aedat_utilities {
 
     impl CsvConfig {
         pub fn new(args: &ArgMatches) -> Result<CsvConfig, std::io::Error> {
-            let mut filename = args.get_one::<PathBuf>("filename").unwrap().to_owned();
+            let mut filename = args.get_one::<PathBuf>("filename").unwrap().clone();
             filename.set_extension("csv");
 
             let include_polarity = args.get_flag("includePolarity");
@@ -119,7 +122,7 @@ pub mod aedat_utilities {
 
     impl VidConfig {
         pub fn new(args: &ArgMatches) -> Result<VidConfig, std::io::Error> {
-            let mut filename = args.get_one::<PathBuf>("filename").unwrap().to_owned();
+            let mut filename = args.get_one::<PathBuf>("filename").unwrap().clone();
             filename.set_extension("");
 
             let window_size: usize = args.get_one::<usize>("windowSize").unwrap().to_owned();
@@ -166,6 +169,7 @@ pub mod aedat_utilities {
     }
 
     impl CameraParameters {
+        #[must_use]
         pub fn new(camera_type: CameraType) -> CameraParameters {
             match camera_type {
                 CameraType::DVS128 => CameraParameters {
@@ -188,7 +192,7 @@ pub mod aedat_utilities {
     }
 
     impl Frame {
-        pub fn save_frame(&self, frame_tmp_dir: &PathBuf, filename: &str) -> std::io::Result<()> {
+        pub fn save_frame(&self, frame_tmp_dir: &Path, filename: &str) -> std::io::Result<()> {
             let result = self.img.save(format!(
                 "{}/{}_frame{}.png",
                 frame_tmp_dir.to_string_lossy(),
@@ -212,8 +216,8 @@ pub mod aedat_utilities {
     ) -> Result<String, std::io::Error> {
         // Grab 0.5MB or the entire file if too small
         let header = match aedat_file {
-            file if file.len() >= 524288 => &aedat_file[0..524288],
-            _ => &aedat_file,
+            file if file.len() >= 524_288 => &aedat_file[0..524_288],
+            _ => aedat_file,
         };
 
         let contents = String::from_utf8_lossy(header);
@@ -224,32 +228,28 @@ pub mod aedat_utilities {
             }
         }
 
-        return Err(std::io::Error::new(
+        Err(std::io::Error::new(
             ErrorKind::NotFound,
             format!("'{}' was not found in the file", search),
-        ));
+        ))
     }
 
     pub fn parse_camera_type(aedat_file: &Vec<u8>) -> Result<CameraParameters, std::io::Error> {
-        let hardware_interface = find_line_in_header(&aedat_file, "# HardwareInterface:")?;
+        let hardware_interface = find_line_in_header(aedat_file, "# HardwareInterface:")?;
 
         match Some(hardware_interface) {
-            Some(ref s) if (s.contains("DVS128")) => {
-                return Ok(CameraParameters::new(CameraType::DVS128))
-            }
+            Some(ref s) if (s.contains("DVS128")) => Ok(CameraParameters::new(CameraType::DVS128)),
             Some(ref s) if (s.contains("DAVIS240")) => {
-                return Ok(CameraParameters::new(CameraType::DAVIS240))
+                Ok(CameraParameters::new(CameraType::DAVIS240))
             }
-            _ => {
-                return Err(std::io::Error::new(
-                    ErrorKind::NotFound,
-                    "Could not parse camera type",
-                ))
-            }
-        };
+            _ => Err(std::io::Error::new(
+                ErrorKind::NotFound,
+                "Could not parse camera type",
+            )),
+        }
     }
 
-    pub fn find_header_end(aedat_file: &Vec<u8>) -> Result<u32, std::io::Error> {
+    pub fn find_header_end(aedat_file: &[u8]) -> Result<u32, std::io::Error> {
         // Equivalent to: #End Of ASCII
         const END_OF_ASCII: [u8; 22] = [
             35, 69, 110, 100, 32, 79, 102, 32, 65, 83, 67, 73, 73, 32, 72, 101, 97, 100, 101, 114,
@@ -267,20 +267,20 @@ pub mod aedat_utilities {
             }
 
             // End of header has been found
-            if &END_OF_ASCII[..] == &header_end_q[..] {
+            if END_OF_ASCII[..] == header_end_q[..] {
                 return Ok((i + 1) as u32);
             }
         }
 
-        return Err(std::io::Error::new(
+        Err(std::io::Error::new(
             ErrorKind::NotFound,
             "End of header not found",
-        ));
+        ))
     }
 
     pub fn get_events(
         end_of_header_index: u32,
-        aedat_file: &Vec<u8>,
+        aedat_file: &[u8],
     ) -> Result<Vec<Event>, std::io::Error> {
         // Size of an event in bytes
         const EVENT_SIZE: usize = 8;
@@ -314,19 +314,13 @@ pub mod aedat_utilities {
     }
 
     fn format_polarity(polarity: bool) -> String {
-        format!(
-            "{},",
-            match polarity {
-                true => "1",
-                false => "-1",
-            }
-        )
+        format!("{},", if polarity { "1" } else { "-1" })
     }
 
     fn config_header(config: &CsvConfig) -> String {
         let mut header_tmp = String::from("");
 
-        if config.include_polarity == true {
+        if config.include_polarity {
             header_tmp.push_str("On/Off,");
         }
 
@@ -345,8 +339,11 @@ pub mod aedat_utilities {
         format!("{x},{y},", x = x, y = y)
     }
 
-    fn format_coords_pn(x: u8, y: u8, cam_x: &u8) -> String {
-        format!("{},", ((*cam_x as u32 * (y - 1) as u32) + (x - 1) as u32))
+    fn format_coords_pn(x: u8, y: u8, cam_x: u8) -> String {
+        format!(
+            "{},",
+            ((u32::from(cam_x) * u32::from(y - 1)) + u32::from(x - 1))
+        )
     }
 
     pub fn create_csv(
@@ -356,50 +353,49 @@ pub mod aedat_utilities {
     ) -> std::io::Result<()> {
         // Create CSV file and write header
         let mut new_csv = File::create(&config.filename)?;
-        let csv_header = config_header(&config);
-        new_csv.write(csv_header.as_bytes())?;
+        let csv_header = config_header(config);
+        new_csv.write_all(csv_header.as_bytes())?;
 
         // Create write buffer and preallocate space
-        const BUF_SIZE: usize = 150000;
+        const BUF_SIZE: usize = 150_000;
         let mut write_buf = Vec::with_capacity(BUF_SIZE);
 
-        let time_offset = match config.offset_time {
-            true => events[0].get_timestamp(),
-            false => 0,
+        let time_offset = if config.offset_time {
+            events[0].get_timestamp()
+        } else {
+            0
         };
 
         for event in events {
             let (x, y) = event.get_coords(&cam.camera_type);
             let event_polarity = event.get_polarity(&cam.camera_type);
 
-            write!(
+            writeln!(
                 &mut write_buf,
-                "{}",
-                format!(
-                    "{p}{xy}{t}\n",
-                    p = match config.include_polarity {
-                        true => format_polarity(event_polarity),
-                        false => String::from(""),
-                    },
-                    xy = match config.coords {
-                        CoordMode::XY => format_coords_xy(x, y),
-                        CoordMode::PixelNum => format_coords_pn(x, y, &cam.camera_x),
-                        CoordMode::NoCoord => String::from(""),
-                    },
-                    t = event.get_timestamp() - time_offset,
-                )
+                "{p}{xy}{t}",
+                p = if config.include_polarity {
+                    format_polarity(event_polarity)
+                } else {
+                    String::from("")
+                },
+                xy = match config.coords {
+                    CoordMode::XY => format_coords_xy(x, y),
+                    CoordMode::PixelNum => format_coords_pn(x, y, cam.camera_x),
+                    CoordMode::NoCoord => String::from(""),
+                },
+                t = event.get_timestamp() - time_offset,
             )?;
 
             // Write events to disk once enough have been collected
             if write_buf.len() >= BUF_SIZE {
-                new_csv.write(write_buf.as_slice())?;
+                new_csv.write_all(write_buf.as_slice())?;
                 write_buf.clear();
             }
         }
 
         // Write any remaining events to disk
         if !write_buf.is_empty() {
-            new_csv.write(write_buf.as_slice())?;
+            new_csv.write_all(write_buf.as_slice())?;
         }
 
         Ok(())
@@ -407,10 +403,12 @@ pub mod aedat_utilities {
 
     fn prep_frame_tmp_dir(tmp_dir: &PathBuf) -> std::io::Result<()> {
         // Create frame tmp directory if it does not exist
-        match fs::create_dir(tmp_dir) {
-            Ok(_) => (),
-            Err(_) => (),
+        if let Err(e) = fs::create_dir(tmp_dir) {
+            if e.kind() != ErrorKind::AlreadyExists {
+                return Err(e);
+            }
         }
+
         // Clear any old files
         let paths = fs::read_dir(tmp_dir)?;
         for path in paths {
@@ -426,7 +424,7 @@ pub mod aedat_utilities {
         cam: &CameraParameters,
     ) -> std::io::Result<()> {
         let frame_tmp_dir = if config.keep_frames {
-            config.filename.to_owned()
+            config.filename.clone()
         } else {
             PathBuf::from(".frames_tmp")
         };
@@ -445,9 +443,10 @@ pub mod aedat_utilities {
         let mut write_buf: Vec<Frame> = Vec::with_capacity(BUF_SIZE);
 
         // Init canvas
-        let mut img = ImageBuffer::from_fn(cam.camera_x as u32, cam.camera_y as u32, |_, _| {
-            image::Rgb(colors::BLACK)
-        });
+        let mut img =
+            ImageBuffer::from_fn(u32::from(cam.camera_x), u32::from(cam.camera_y), |_, _| {
+                image::Rgb(colors::BLACK)
+            });
 
         // Define end time relative to the first event
         let mut end_time: i32 = match events.first() {
@@ -463,7 +462,7 @@ pub mod aedat_utilities {
 
         for event in events {
             // Place a pixel on the image canvas with the appropriate color & position
-            place_pixel(config, cam, &on_color, &off_color, &mut img, &event);
+            place_pixel(config, cam, on_color, off_color, &mut img, &event);
 
             if event.get_timestamp() > end_time {
                 frames_created += 1;
@@ -529,7 +528,7 @@ pub mod aedat_utilities {
         cam: &CameraParameters,
     ) -> std::io::Result<()> {
         let frame_tmp_dir = if config.keep_frames {
-            config.filename.to_owned()
+            config.filename.clone()
         } else {
             PathBuf::from(".frames_tmp")
         };
@@ -548,9 +547,10 @@ pub mod aedat_utilities {
         let mut write_buf: Vec<Frame> = Vec::with_capacity(BUF_SIZE);
 
         // Init canvas
-        let mut img = ImageBuffer::from_fn(cam.camera_x as u32, cam.camera_y as u32, |_, _| {
-            image::Rgb(colors::BLACK)
-        });
+        let mut img =
+            ImageBuffer::from_fn(u32::from(cam.camera_x), u32::from(cam.camera_y), |_, _| {
+                image::Rgb(colors::BLACK)
+            });
 
         let mut events_in_current_frame = 0;
         let max_events = config.window_size;
@@ -558,7 +558,7 @@ pub mod aedat_utilities {
 
         for event in events {
             // Place a pixel on the image canvas with the appropriate color & position
-            place_pixel(config, cam, &on_color, &off_color, &mut img, &event);
+            place_pixel(config, cam, on_color, off_color, &mut img, &event);
             events_in_current_frame += 1;
 
             if events_in_current_frame == max_events {
@@ -621,8 +621,8 @@ pub mod aedat_utilities {
     fn place_pixel(
         config: &VidConfig,
         cam: &CameraParameters,
-        on_color: &image::Rgb<u8>,
-        off_color: &image::Rgb<u8>,
+        on_color: image::Rgb<u8>,
+        off_color: image::Rgb<u8>,
         img: &mut ImageBuffer<image::Rgb<u8>, Vec<u8>>,
         event: &Event,
     ) {
@@ -630,10 +630,10 @@ pub mod aedat_utilities {
 
         let event_polarity = event.get_polarity(&cam.camera_type);
 
-        if !config.exclude_on && event_polarity == true {
-            img.put_pixel((x - 1) as u32, (y - 1) as u32, *on_color);
-        } else if !config.exclude_off && event_polarity == false {
-            img.put_pixel((x - 1) as u32, (y - 1) as u32, *off_color);
+        if !config.exclude_on && event_polarity {
+            img.put_pixel(u32::from(x - 1), u32::from(y - 1), on_color);
+        } else if !config.exclude_off && !event_polarity {
+            img.put_pixel(u32::from(x - 1), u32::from(y - 1), off_color);
         }
     }
 
