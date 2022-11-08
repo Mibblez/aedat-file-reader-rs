@@ -1,15 +1,12 @@
-#[macro_use]
-extern crate clap;
-
 mod lib;
-
 pub use crate::lib::aedat_utilities;
 
 use std::io::prelude::*;
 use std::process;
 use std::fs::File;
-use std::path::Path;
-use clap::{App, Arg, SubCommand, ArgGroup, ArgMatches};
+use std::path::PathBuf;
+
+use clap::{Arg, ArgAction, ArgGroup, Command, ArgMatches};
 
 fn csv_convert(args: &ArgMatches) {
     let csv_config = aedat_utilities::CsvConfig::new(&args).unwrap_or_else(|err| {
@@ -18,28 +15,25 @@ fn csv_convert(args: &ArgMatches) {
     });
 
     // Read file
-    let mut f = File::open(&csv_config.filename).unwrap();
+    let aedat_filename = args
+    .get_one::<PathBuf>("filename")
+    .unwrap();
+
+    let mut f = File::open(aedat_filename).unwrap();
     let mut aedat_file = Vec::new();
     f.read_to_end(&mut aedat_file).unwrap();
 
     let cam = aedat_utilities::parse_camera_type(&aedat_file).unwrap();
-    // println!("Found camera: {:?}", cam.camera_type);
-
     let header_end = aedat_utilities::find_header_end(&aedat_file).unwrap();
-    // println!("End of header at position: {:?}", header_end);
-
     let events = aedat_utilities::get_events(header_end, &aedat_file).unwrap();
-    // println!("Total number of events: {}", events.len());
 
     use std::time::Instant;
     let now = Instant::now();
 
-    // TODO: should probably fix this mess
-    let csv_name = Path::new(&csv_config.filename).file_stem().unwrap().to_str().unwrap();
-    aedat_utilities::create_csv(events, csv_name, &csv_config, &cam).unwrap();
+    aedat_utilities::create_csv(events, &csv_config, &cam).unwrap();
 
     let elapsed = now.elapsed();
-    let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1000_000_000.0);
+    let sec = (elapsed.as_secs() as f64) + (elapsed.subsec_nanos() as f64 / 1_000_000_000.0);
     println!("Export time: {} seconds", sec);
 }
 
@@ -50,169 +44,207 @@ fn vid_convert(args: &ArgMatches) {
     });
 
     // Read file
-    let mut f = File::open(&vid_config.filename).unwrap();
+    let aedat_filename = args
+        .get_one::<PathBuf>("filename")
+        .unwrap();
+    let mut f = File::open(aedat_filename).unwrap();
     let mut aedat_file = Vec::new();
     f.read_to_end(&mut aedat_file).unwrap();
 
     let cam = aedat_utilities::parse_camera_type(&aedat_file).unwrap();
-    // println!("Found camera: {:?}", cam.camera_type);
 
     let header_end = aedat_utilities::find_header_end(&aedat_file).unwrap();
-    // println!("End of header at position: {:?}", header_end);
 
     let events = aedat_utilities::get_events(header_end, &aedat_file).unwrap();
-    // println!("Total number of events: {}", events.len());
 
-    // TODO: should probably fix this mess
-    let video_name = Path::new(&vid_config.filename).file_stem().unwrap().to_str().unwrap();
-
-    if args.is_present("timeBasedReconstruction") {
-        aedat_utilities::create_time_based_video(events, video_name, &vid_config, &cam).unwrap();
+    if args.get_flag("timeBasedReconstruction") {
+        aedat_utilities::create_time_based_video(events, &vid_config, &cam).unwrap();
     } else {
-        aedat_utilities::create_event_based_video(events, video_name, &vid_config, &cam).unwrap();
+        aedat_utilities::create_event_based_video(events, &vid_config, &cam).unwrap();
     }
 }
 
 fn main() {
-
-    let matches = App::new("aedat_reader")
+    let matches = Command::new("pacman")
         .about("Program for converting AEDAT files to CSV or video.")
-        .author(crate_authors!())
-        .subcommand(SubCommand::with_name("csv")
-            .about("Exports AEDAT to CSV")
-            .arg(Arg::with_name("filename")
-                .help("The AEDAT file to be processed")
-                .required(true)
-            )
-            .groups(&[
-                ArgGroup::with_name("csv_spatial")
-                    .args(&["coords", "pixelNumber", "noSpatial"])
-                    .required(true),
-                ArgGroup::with_name("csv_polarity")
-                    .args(&["includePolarity", "excludePolarity"])
-                    .required(true)
-            ])
-            .arg(Arg::with_name("coords")
-                .help("Represents coordinates as X and Y columns")
-                .short("c")
-                .long("coords")
-            )
-            .arg(Arg::with_name("pixelNumber")
-                .help("Represents coordinates as a single column of values")
-                .short("p")
-                .long("pixel_number")
-            )
-            .arg(Arg::with_name("noSpatial")
-                .help("No spatial information")
-                .short("n")
-                .long("no_spatial")
-            )
-            .arg(Arg::with_name("includePolarity")
-                .help("Includes polarity")
-                .short("i")
-                .long("include_polarity")
-            )
-            .arg(Arg::with_name("excludePolarity")
-                .help("Excludes polarity")
-                .short("e")
-                .long("exclude_polarity")
-            )
-            .arg(Arg::with_name("offsetTime")
-            .help("Starts timestamps in the exported csv at 0")
-            .short("o")
-            .long("offset_time") 
-            )
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand(
+            Command::new("csv")
+                .long_flag("csv")
+                .about("Export AEDAT to CSV")
+                .arg(
+                    Arg::new("filename")
+                        .value_parser(clap::value_parser!(PathBuf))
+                        .action(ArgAction::Set)
+                        .required(true)
+                        .help("Path to the AEDAT file to be processed"),
+                )
+                .group(
+                    ArgGroup::new("csv_spatial")
+                        .required(true)
+                        .args(["coords", "pixelNumber", "noSpatial"])
+                )
+                .group(
+                    ArgGroup::new("csv_polarity")
+                        .required(true)
+                        .args(["includePolarity", "excludePolarity"])
+                )
+                .arg(
+                    Arg::new("coords")
+                        .short('c')
+                        .long("coords")
+                        .action(ArgAction::SetTrue)
+                        .help("Represent coordinates as X and Y columns")
+                )
+                .arg(
+                    Arg::new("pixelNumber")
+                        .short('p')
+                        .long("pixel_number")
+                        .action(ArgAction::SetTrue)
+                        .help("Represent coordinates as a single column of values")
+                )
+                .arg(
+                    Arg::new("noSpatial")
+                        .short('n')
+                        .long("no_spatial")
+                        .action(ArgAction::SetTrue)
+                        .help("Do not include spatial information")
+                )
+                .arg(
+                    Arg::new("includePolarity")
+                        .short('i')
+                        .long("include_polarity")
+                        .action(ArgAction::SetTrue)
+                        .help("Includes polarity column")
+                )
+                .arg(
+                    Arg::new("excludePolarity")
+                        .short('e')
+                        .long("exclude_polarity")
+                        .action(ArgAction::SetTrue)
+                        .help("Excludes polarity column")
+                )
+                .arg(
+                    Arg::new("offsetTime")
+                        .short('o')
+                        .long("offset_time")
+                        .action(ArgAction::SetTrue)
+                        .help("Start timestamps in the exported csv at 0")
+                ),
         )
-        .subcommand(SubCommand::with_name("vid")
-            .about("Exports AEDAT to AVI video")
-            .arg(Arg::with_name("filename")
-                .help("The AEDAT file to be processed")
-                .required(true)
-            )
-            .groups(&[
-                ArgGroup::with_name("reconstructionMethod")
-                    .args(&["timeBasedReconstruction", "eventBasedReconstruction"])
-                    .required(true),
-            ])
-            .arg(Arg::with_name("timeBasedReconstruction")
-                .help("Reconstruct frames based on a fixed time window")
-                .long("time_based")
-            )
-            .arg(Arg::with_name("eventBasedReconstruction")
-                .help("Reconstruct frames based on a fixed number of events")
-                .long("event_based")
-            )
-            .arg(Arg::with_name("windowSize")
-                .help("The duration of each frame. Microseconds for time based reconstruction; number of events for event based reconstruction")
-                .takes_value(true)
-                .short("w")
-                .long("window_size")
-                .required(true)
-            )
-            .arg(Arg::with_name("maxFrames")
-                .help("The maximum number of frames to be encoded")
-                .takes_value(true)
-                .short("m")
-                .long("max_frames")
-            )
-            .arg(Arg::with_name("excludeOffEvents")
-                .help("Exclude off events in the exported video")
-                .long("exclude_off")
-                .conflicts_with("excludeOnEvents")
-            )
-            .arg(Arg::with_name("excludeOnEvents")
-                .help("Exclude on events in the exported video")
-                .long("exclude_on")
-                .conflicts_with("excludeOffEvents")
-            )
-            .arg(Arg::with_name("keepFrames")
-                .help("Keep the reconstructed frames")
-                .short("k")
-                .long("keep_frames")
-            )
-            .arg(Arg::with_name("omitVideo")
-                .help("Do not reconstruct a video")
-                .short("o")
-                .long("omit_video")
-                .requires("keepFrames")
-            )
+        .subcommand(
+            Command::new("vid")
+                .long_flag("vid")
+                .about("Export AEDAT to AVI video")
+                .arg(
+                    Arg::new("filename")
+                        .value_parser(clap::value_parser!(PathBuf))
+                        .action(ArgAction::Set)
+                        .required(true)
+                        .help("Path to the AEDAT file to be processed"),
+                )
+                .group(
+                    ArgGroup::new("reconstructionMethod")
+                        .args(["timeBasedReconstruction", "eventBasedReconstruction"])
+                        .required(true)
+                )
+                .arg(
+                    Arg::new("timeBasedReconstruction")
+                        .long("time_based")
+                        .action(ArgAction::SetTrue)
+                        .help("Reconstruct frames based on a fixed time window"),
+                )
+                .arg(
+                    Arg::new("eventBasedReconstruction")
+                        .long("event_based")
+                        .action(ArgAction::SetTrue)
+                        .help("Reconstruct frames based on a fixed number of events"),
+                )
+                .arg(
+                    Arg::new("windowSize")
+                        .long("window_size")
+                        .short('w')
+                        .value_parser(clap::value_parser!(usize))
+                        .action(ArgAction::Set)
+                        .required(true)
+                        .help("The duration of each frame. Microseconds for time based reconstruction; number of events for event based reconstruction"),
+                )
+                .arg(
+                    Arg::new("maxFrames")
+                        .long("max_frames")
+                        .short('m')
+                        .value_parser(clap::value_parser!(usize))
+                        .action(ArgAction::Set)
+                        .help("The maximum number of frames to be encoded"),
+                )
+                .arg(
+                    Arg::new("excludeOffEvents")
+                        .long("exclude_off")
+                        .conflicts_with("excludeOnEvents")
+                        .action(ArgAction::SetTrue)
+                        .help("Exclude off events in the exported video")
+                )
+                .arg(
+                    Arg::new("excludeOnEvents")
+                        .long("exclude_on")
+                        .conflicts_with("excludeOffEvents")
+                        .action(ArgAction::SetTrue)
+                        .help("Exclude on events in the exported video")
+                )
+                .arg(
+                    Arg::new("keepFrames")
+                        .long("keep_frames")
+                        .short('k')
+                        .action(ArgAction::SetTrue)
+                        .help("Keep the reconstructed frames"),
+                )
+                .arg(
+                    Arg::new("omitVideo")
+                        .long("omit_video")
+                        .short('o')
+                        .action(ArgAction::SetTrue)
+                        .help("Do not compile the reconstructed frames into a video"),
+                ),
         )
         .get_matches();
-
+    
     match matches.subcommand() {
-        ("csv", Some(csv_matches)) => csv_convert(csv_matches),
-        ("vid", Some(vid_matches)) => vid_convert(vid_matches),
-        _ => println!("Subcommand 'vid' or 'csv' required."),
+        Some(("csv", csv_matches)) => csv_convert(csv_matches),
+        Some(("vid", vid_matches)) => vid_convert(vid_matches),
+        _ => unreachable!(), // If all subcommands are defined above, anything else is unreachable
     }
 
+    // match matches.subcommand() {
+    //     Some(("csv", csv_matches)) => {
+    //         if csv_matches.contains_id("filename") {
+    //             let aedat_filename = csv_matches
+    //                 .get_one::<PathBuf>("filename")
+    //                 .unwrap()
+    //                 .display();
+
+    //             println!("Reading file {}...", aedat_filename);
+    //             println!("Coords set: {}", csv_matches.get_flag("coords"));
+    //             println!("No spatial set: {}", csv_matches.get_flag("noSpatial"));
+    //             return;
+    //         }
+    //     }
+    //     Some(("vid", vid_matches)) => {
+    //         println!("Vid subcommand used");
+
+    //         if vid_matches.contains_id("filename") {
+    //             let aedat_filename = vid_matches
+    //                 .get_one::<PathBuf>("filename")
+    //                 .unwrap()
+    //                 .display();
+    //             println!("Reading file {}...", aedat_filename);
+
+    //             let window_size = vid_matches.
+    //                 get_one::<usize>("windowSize")
+    //                 .unwrap();
+    //             println!("Window size: {}", window_size)
+    //         }
+    //     }
+    //     _ => unreachable!(), // If all subcommands are defined above, anything else is unreachable
+    // }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

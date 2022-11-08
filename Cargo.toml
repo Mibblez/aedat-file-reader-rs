@@ -2,8 +2,8 @@
 name = "aedat_reader"
 version = "0.1.0"
 authors = ["Anthony Beninati <abeninati01@manhattan.edu>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
-image = "0.21.2"
-clap = "2.33.*"
+image = "~0.21.2"
+clap = "~4.0.22"

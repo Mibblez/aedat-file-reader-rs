@@ -5,8 +5,10 @@ pub mod aedat_utilities {
     use std::io::prelude::*;
     use std::fs::File;
     use std::convert::TryInto;
+    //use std::ffi::OsString;
     use std::io::ErrorKind;
     use std::fs;
+    use std::path::{PathBuf, Path};
     use std::process::Command;
 
     use image::ImageBuffer;
@@ -58,7 +60,7 @@ pub mod aedat_utilities {
     }
 
     pub struct CsvConfig {
-        pub filename: String,
+        pub filename: PathBuf,
         pub include_polarity: bool,
         pub coords: CoordMode,
         pub offset_time: bool,
@@ -66,10 +68,14 @@ pub mod aedat_utilities {
 
     impl CsvConfig {
         pub fn new(args: &ArgMatches) -> Result<CsvConfig, std::io::Error> {
-            let filename = String::from(args.value_of("filename").unwrap());
+            let mut filename = args
+                .get_one::<PathBuf>("filename")
+                .unwrap()
+                .to_owned();
+            filename.set_extension("csv");
 
-            let (include_polarity, exclude_polarity) = (args.is_present("includePolarity"),
-                                                        args.is_present("excludePolarity"));
+            let include_polarity = args.get_flag("includePolarity");
+            let exclude_polarity = args.get_flag("excludePolarity");
 
             let include_polarity = match (include_polarity, exclude_polarity) {
                 (true, _) => true,
@@ -77,9 +83,9 @@ pub mod aedat_utilities {
                 _ => unreachable!()
             };
 
-            let (coords, pixel_number, no_spatial) = (args.is_present("coords"),
-                                                      args.is_present("pixelNumber"),
-                                                      args.is_present("noSpatial"));
+            let coords = args.get_flag("coords");
+            let pixel_number = args.get_flag("pixelNumber");
+            let no_spatial = args.get_flag("noSpatial");
 
             let coords = match (coords, pixel_number, no_spatial) {
                 (true, _, _) => CoordMode::XY,
@@ -88,14 +94,14 @@ pub mod aedat_utilities {
                 _ => unreachable!(),
             };
 
-            let offset_time = args.is_present("offsetTime");
+            let offset_time = args.get_flag("offsetTime");
 
-            Ok(CsvConfig { filename, include_polarity, coords, offset_time})
+            Ok(CsvConfig {filename, include_polarity, coords, offset_time})
         }
     }
 
     pub struct VidConfig {
-        pub filename: String,
+        pub filename: PathBuf,
         pub window_size: usize,
         pub max_frames: usize,
         pub exclude_on: bool,
@@ -106,26 +112,28 @@ pub mod aedat_utilities {
 
     impl VidConfig {
         pub fn new(args: &ArgMatches) -> Result<VidConfig, std::io::Error> {
-            let filename = String::from(args.value_of("filename").unwrap());
+            let mut filename = args
+                .get_one::<PathBuf>("filename")
+                .unwrap()
+                .to_owned();
+            filename.set_extension("");
 
-            let window_size: usize = match args.value_of("windowSize").unwrap().parse() {
-                Ok(t) => t,
-                Err(_) => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: frameTime")),
-            };
+            let window_size: usize = args.
+                get_one::<usize>("windowSize")
+                .unwrap()
+                .to_owned();
 
              let max_frames: usize =
-                 if args.is_present("maxFrames") {
-                    match args.value_of("maxFrames").unwrap().parse() {
-                        Ok(t) => t,
-                        Err(_) => return Err(std::io::Error::new(ErrorKind::InvalidData, "Invalid input: maxFrames")),
-                    }
-                 } else { std::usize::MAX };
+                match args.get_one::<usize>("maxFrames") {
+                    Some(v) => v.to_owned(),
+                    None => std::usize::MAX,
+                };
 
-            let exclude_on = args.is_present("excludeOnEvents");
-            let exclude_off = args.is_present("excludeOffEvents");
+            let exclude_on = args.get_flag("excludeOnEvents");
+            let exclude_off = args.get_flag("excludeOffEvents");
 
-            let keep_frames = args.is_present("keepFrames");
-            let omit_video = args.is_present("omitVideo");
+            let keep_frames = args.get_flag("keepFrames");
+            let omit_video = args.get_flag("omitVideo");
 
             Ok(VidConfig { filename, window_size, max_frames, exclude_on, exclude_off, keep_frames, omit_video })
         }
@@ -164,8 +172,11 @@ pub mod aedat_utilities {
     }
 
     impl Frame {
-        pub fn save_frame(&self, frame_tmp_dir: &str, filename: &str) -> std::io::Result<()> {
-            self.img.save(format!("{}/{}_frame{}.png", frame_tmp_dir, filename, self.count))?;
+        pub fn save_frame(&self, frame_tmp_dir: &PathBuf, filename: &str) -> std::io::Result<()> {
+            self.img.save(format!("{}/{}_frame{}.png",
+                frame_tmp_dir.to_string_lossy(),
+                filename,
+                self.count))?;
             Ok(())
         }
     }
@@ -281,9 +292,9 @@ pub mod aedat_utilities {
         format!("{},", ((*cam_x as u32 * (y - 1) as u32) + (x - 1) as u32))
     }
 
-    pub fn create_csv(events: Vec<Event>, filename: &str, config: &CsvConfig, cam: &CameraParameters) -> std::io::Result<()> {
+    pub fn create_csv(events: Vec<Event>, config: &CsvConfig, cam: &CameraParameters) -> std::io::Result<()> {
         // Create CSV file and write header
-        let mut new_csv = File::create(format!("{}.csv", filename))?;
+        let mut new_csv = File::create(&config.filename)?;
         let csv_header = config_header(&config);
         new_csv.write(csv_header.as_bytes())?;
 
@@ -330,7 +341,8 @@ pub mod aedat_utilities {
         Ok(())
     }
 
-    fn prep_frame_tmp_dir(tmp_dir: &str) -> std::io::Result<()> {
+
+    fn prep_frame_tmp_dir(tmp_dir: &PathBuf) -> std::io::Result<()> {
         // Create frame tmp directory if it does not exist
         match fs::create_dir(tmp_dir) {
             Ok(_) => (),
@@ -345,8 +357,9 @@ pub mod aedat_utilities {
         Ok(())
     }
 
-    pub fn create_time_based_video(events: Vec<Event>, filename: &str, config: &VidConfig, cam: &CameraParameters) -> std::io::Result<()> {
-        let frame_tmp_dir = if config.keep_frames { filename } else { ".frames_tmp" };
+    pub fn create_time_based_video(events: Vec<Event>, config: &VidConfig, cam: &CameraParameters) -> std::io::Result<()> {
+        let frame_tmp_dir = if config.keep_frames { config.filename.to_owned() } else { PathBuf::from(".frames_tmp") };
+        let video_name = Path::new(&config.filename).file_stem().unwrap().to_string_lossy();
 
         prep_frame_tmp_dir(&frame_tmp_dir)?;
 
@@ -381,7 +394,7 @@ pub mod aedat_utilities {
 
                 end_time = event.get_timestamp() + config.window_size as i32;
 
-                let count = fs::read_dir(frame_tmp_dir)?.count() + write_buf.len();
+                let count = fs::read_dir(&frame_tmp_dir)?.count() + write_buf.len();
 
                 // Save image to buffer
                 write_buf.push(Frame {
@@ -392,7 +405,7 @@ pub mod aedat_utilities {
                 // Write all frames to disk once enough have been saved to buffer
                 if write_buf.len() == BUF_SIZE {
                     for frame in &write_buf {
-                        frame.save_frame(&frame_tmp_dir, &filename)?;
+                        frame.save_frame(&frame_tmp_dir, &video_name)?;
                     }
                     write_buf.clear();
                 }
@@ -406,15 +419,16 @@ pub mod aedat_utilities {
 
         // Save any remaining frames in buffer
         for frame in &write_buf {
-            frame.save_frame(&frame_tmp_dir, &filename)?;
+            frame.save_frame(&frame_tmp_dir, &video_name)?;
         }
 
         // Save any remaining events in current working img
-        let count = std::fs::read_dir(frame_tmp_dir)?.count();
-        img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir, filename, count))?;
+        let count = std::fs::read_dir(&frame_tmp_dir)?.count();
+        img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir.display(), video_name, count))?;
 
         if !config.omit_video {
-            encode_frames(&filename, &frame_tmp_dir)?;
+            //encode_frames(&video_name, &frame_tmp_dir)?;
+            encode_frames(&config.filename.to_string_lossy(), &frame_tmp_dir)?;
         }
 
         if !config.keep_frames {
@@ -424,8 +438,9 @@ pub mod aedat_utilities {
         Ok(())
     }
 
-    pub fn create_event_based_video(events: Vec<Event>, filename: &str, config: &VidConfig, cam: &CameraParameters) -> std::io::Result<()> {
-        let frame_tmp_dir = if config.keep_frames { filename } else { ".frames_tmp" };
+    pub fn create_event_based_video(events: Vec<Event>, config: &VidConfig, cam: &CameraParameters) -> std::io::Result<()> {
+        let frame_tmp_dir = if config.keep_frames { config.filename.to_owned() } else { PathBuf::from(".frames_tmp") };
+        let video_name = Path::new(&config.filename).file_stem().unwrap().to_string_lossy();
 
         prep_frame_tmp_dir(&frame_tmp_dir)?;
 
@@ -458,7 +473,7 @@ pub mod aedat_utilities {
                     break;
                 }
 
-                let count = fs::read_dir(frame_tmp_dir)?.count() + write_buf.len();
+                let count = fs::read_dir(&frame_tmp_dir)?.count() + write_buf.len();
 
                 // Save image to buffer
                 write_buf.push(Frame {
@@ -469,7 +484,7 @@ pub mod aedat_utilities {
                 // Write all frames to disk once enough have been saved to buffer
                 if write_buf.len() == BUF_SIZE {
                     for frame in &write_buf {
-                        frame.save_frame(&frame_tmp_dir, &filename)?;
+                        frame.save_frame(&frame_tmp_dir, &video_name)?;
                     }
                     write_buf.clear();
                 }
@@ -483,15 +498,15 @@ pub mod aedat_utilities {
 
         // Save any remaining frames in buffer
         for frame in &write_buf {
-            frame.save_frame(&frame_tmp_dir, &filename)?;
+            frame.save_frame(&frame_tmp_dir, &video_name)?;
         }
 
         // Save any remaining events in current working img
-        let count = std::fs::read_dir(frame_tmp_dir)?.count();
-        img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir, filename, count))?;
+        let count = std::fs::read_dir(&frame_tmp_dir)?.count();
+        img.save(format!("{}/{}_tmp_{}.png", frame_tmp_dir.display(), video_name, count))?;
 
         if !config.omit_video {
-            encode_frames(&filename, &frame_tmp_dir)?;
+            encode_frames(&config.filename.to_string_lossy(), &frame_tmp_dir)?;
         }
 
         if !config.keep_frames {
@@ -513,7 +528,7 @@ pub mod aedat_utilities {
         }
     }
 
-    fn encode_frames(filename: &str, frame_tmp_dir: &str) -> std::io::Result<()> {
+    fn encode_frames(filename: &str, frame_tmp_dir: &PathBuf) -> std::io::Result<()> {
         // Encode images into a video via python script
         let output = Command::new("python3")
             .arg("src/frames_to_vid.py")
@@ -617,7 +632,7 @@ mod tests {
 
         let cam = match parse_camera_type(&aedat_file) {
             Ok(t) => t,
-            Err(e) => panic!(e),
+            Err(e) => panic!("{}", e),
         };
 
         assert_eq!(cam.camera_x, 128);
@@ -630,7 +645,7 @@ mod tests {
 
         let cam = match parse_camera_type(&aedat_file) {
             Ok(t) => t,
-            Err(e) => panic!(e),
+            Err(e) => panic!("{}", e),
         };
 
         assert_eq!(cam.camera_x, 240);
