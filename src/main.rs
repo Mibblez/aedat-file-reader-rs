@@ -1,12 +1,12 @@
 mod lib;
 pub use crate::lib::aedat_utilities;
 
-use std::io::prelude::*;
-use std::process;
 use std::fs::File;
+use std::io::prelude::*;
 use std::path::PathBuf;
+use std::process;
 
-use clap::{Arg, ArgAction, ArgGroup, Command, ArgMatches};
+use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 
 fn csv_convert(args: &ArgMatches) {
     let csv_config = aedat_utilities::CsvConfig::new(&args).unwrap_or_else(|err| {
@@ -15,9 +15,7 @@ fn csv_convert(args: &ArgMatches) {
     });
 
     // Read file
-    let aedat_filename = args
-    .get_one::<PathBuf>("filename")
-    .unwrap();
+    let aedat_filename = args.get_one::<PathBuf>("filename").unwrap();
 
     let mut f = File::open(aedat_filename).unwrap();
     let mut aedat_file = Vec::new();
@@ -44,9 +42,7 @@ fn vid_convert(args: &ArgMatches) {
     });
 
     // Read file
-    let aedat_filename = args
-        .get_one::<PathBuf>("filename")
-        .unwrap();
+    let aedat_filename = args.get_one::<PathBuf>("filename").unwrap();
     let mut f = File::open(aedat_filename).unwrap();
     let mut aedat_file = Vec::new();
     f.read_to_end(&mut aedat_file).unwrap();
@@ -208,7 +204,7 @@ fn main() {
                 ),
         )
         .get_matches();
-    
+
     match matches.subcommand() {
         Some(("csv", csv_matches)) => csv_convert(csv_matches),
         Some(("vid", vid_matches)) => vid_convert(vid_matches),
