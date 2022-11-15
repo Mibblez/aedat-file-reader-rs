@@ -1,5 +1,5 @@
-mod lib;
-pub use crate::lib::aedat_utilities;
+mod aedat_conversion;
+pub use aedat_conversion::aedat_utilities;
 
 use std::fs::File;
 use std::io::prelude::*;
