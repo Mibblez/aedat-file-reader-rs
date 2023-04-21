@@ -19,3 +19,9 @@ Cargo.lock
 
 # Temp files
 /frames_tmp/*
+
+# venv
+/venv/
+
+# testing shell script
+lazy.sh

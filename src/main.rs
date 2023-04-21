@@ -60,6 +60,30 @@ fn vid_convert(args: &ArgMatches) {
     }
 }
 
+fn time_window_convert(args: &ArgMatches) {
+    let time_window_config = aedat_utilities::TimeWindowConfig::new(args).unwrap_or_else(|err| {
+        eprintln!("Problem parsing arguments\n{err}");
+        process::exit(1);
+    });
+
+    println!("{:?}", time_window_config.filename);
+
+    // Read file
+    let aedat_filename = args.get_one::<PathBuf>("filename").unwrap();
+    let mut f = File::open(aedat_filename).unwrap();
+    let mut aedat_file = Vec::new();
+    f.read_to_end(&mut aedat_file).unwrap();
+
+    let cam = aedat_utilities::parse_camera_type(&aedat_file).unwrap();
+
+    let header_end = aedat_utilities::find_header_end(&aedat_file).unwrap();
+    
+    let events = aedat_utilities::get_events(header_end, &aedat_file).unwrap();
+
+    aedat_utilities::create_time_window_csv(events, &time_window_config, &cam).unwrap();
+    
+}
+
 fn main() {
     let matches = Command::new("aedat_reader")
         .about("Program for converting AEDAT files to CSV or video.")
@@ -202,12 +226,48 @@ fn main() {
                         .action(ArgAction::SetTrue)
                         .help("Do not compile the reconstructed frames into a video"),
                 ),
+        ).subcommand(Command::new("time_windows")
+            .long_flag("time_windows")
+            .about("Export AEDAT to a series of time windows")
+            .arg(
+                Arg::new("filename")
+                    .value_parser(clap::value_parser!(PathBuf))
+                    .action(ArgAction::Set)
+                    .required(true)
+                    .help("Path to the AEDAT file to be processed"),
+            )
+            .arg(
+                Arg::new("windowSize")
+                    .long("window_size")
+                    .short('w')
+                    .value_parser(clap::value_parser!(u32))
+                    .action(ArgAction::Set)
+                    .required(true)
+                    .help("The duration of each window in microseconds"),
+            )
+            .arg(
+                Arg::new("maxWindows")
+                    .long("max_windows")
+                    .short('m')
+                    .value_parser(clap::value_parser!(u32))
+                    .action(ArgAction::Set)
+                    .help("The maximum number time windows to be encoded"),
+                    
+            )
+            .arg(
+                Arg::new("includeBoth")
+                    .long("include_both")
+                    .short('i')
+                    .action(ArgAction::SetTrue)
+                    .help("Include a column containing the sum of the ON and OFF events in a given time window"),
+            ),
         )
         .get_matches();
 
     match matches.subcommand() {
         Some(("csv", csv_matches)) => csv_convert(csv_matches),
         Some(("vid", vid_matches)) => vid_convert(vid_matches),
+        Some(("time_windows", time_windows_matches)) => time_window_convert(time_windows_matches),
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachable
     }
 
