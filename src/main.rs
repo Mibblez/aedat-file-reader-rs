@@ -11,7 +11,7 @@ use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 
 fn csv_convert(args: &ArgMatches) {
     let csv_config = aedat_utilities::CsvConfig::new(args).unwrap_or_else(|err| {
-        eprintln!("Problem parsing arguments\n{}", err);
+        eprintln!("Problem parsing arguments\n{err}");
         process::exit(1);
     });
 
@@ -32,12 +32,12 @@ fn csv_convert(args: &ArgMatches) {
 
     let elapsed = now.elapsed();
     let sec = (elapsed.as_secs() as f64) + (f64::from(elapsed.subsec_nanos()) / 1_000_000_000.0);
-    println!("Export time: {} seconds", sec);
+    println!("Export time: {sec} seconds");
 }
 
 fn vid_convert(args: &ArgMatches) {
     let vid_config = aedat_utilities::VidConfig::new(args).unwrap_or_else(|err| {
-        eprintln!("Problem parsing arguments\n{}", err);
+        eprintln!("Problem parsing arguments\n{err}");
         process::exit(1);
     });
 

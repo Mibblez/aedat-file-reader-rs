@@ -51,9 +51,9 @@ pub mod aedat_utilities {
                     // DVS128   (X = width - bits33-39 ) ; (Y = height - bits40-46 ) [bytes 2-3]
                     (
                         // X coordinate
-                        128 - ((self.bytes[3] >> 1) & 0b111_1111) as u8,
+                        128 - ((self.bytes[3] >> 1) & 0b111_1111),
                         // Y coordinate
-                        128 - (self.bytes[2] & 0b111_1111) as u8,
+                        128 - (self.bytes[2] & 0b111_1111),
                     )
                 }
                 CameraType::DAVIS240 => {
@@ -61,10 +61,9 @@ pub mod aedat_utilities {
                     (
                         // X coordinate
                         240 - (((self.bytes[1] << 4) & 0b1111_0000)
-                            + ((self.bytes[2] >> 4) & 0b1111)) as u8,
+                            + ((self.bytes[2] >> 4) & 0b1111)),
                         // Y coordinate
-                        180 - (((self.bytes[0] << 2) & 0b0111_1100) + ((self.bytes[1] >> 6) & 0b11))
-                            as u8,
+                        180 - (((self.bytes[0] << 2) & 0b0111_1100) + ((self.bytes[1] >> 6) & 0b11)),
                     )
                 }
             }
@@ -276,7 +275,7 @@ pub mod aedat_utilities {
 
         Err(std::io::Error::new(
             ErrorKind::NotFound,
-            format!("'{}' was not found in the file", search),
+            format!("'{search}' was not found in the file"),
         ))
     }
 
@@ -364,7 +363,7 @@ pub mod aedat_utilities {
     }
 
     fn config_header(config: &CsvConfig) -> String {
-        let mut header_tmp = String::from("");
+        let mut header_tmp = String::new();
 
         if config.include_polarity {
             header_tmp.push_str("On/Off,");
@@ -382,7 +381,7 @@ pub mod aedat_utilities {
     }
 
     fn format_coords_xy(x: u8, y: u8) -> String {
-        format!("{x},{y},", x = x, y = y)
+        format!("{x},{y},")
     }
 
     fn format_coords_pn(x: u8, y: u8, cam_x: u8) -> String {
@@ -422,12 +421,12 @@ pub mod aedat_utilities {
                 p = if config.include_polarity {
                     format_polarity(event_polarity)
                 } else {
-                    String::from("")
+                    String::new()
                 },
                 xy = match config.coords {
                     CoordMode::XY => format_coords_xy(x, y),
                     CoordMode::PixelNum => format_coords_pn(x, y, cam.camera_x),
-                    CoordMode::NoCoord => String::from(""),
+                    CoordMode::NoCoord => String::new(),
                 },
                 t = event.get_timestamp() - time_offset,
             )?;
@@ -757,7 +756,7 @@ pub mod aedat_utilities {
         // Encode images into a video via python script
         let output = Command::new("python3")
             .arg("src/frames_to_vid.py")
-            .arg(format!("{}.avi", filename))
+            .arg(format!("{filename}.avi"))
             .arg(frame_tmp_dir)
             .output()
             .expect("failed to execute process");
