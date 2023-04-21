@@ -66,8 +66,6 @@ fn time_window_convert(args: &ArgMatches) {
         process::exit(1);
     });
 
-    println!("{:?}", time_window_config.filename);
-
     // Read file
     let aedat_filename = args.get_one::<PathBuf>("filename").unwrap();
     let mut f = File::open(aedat_filename).unwrap();
