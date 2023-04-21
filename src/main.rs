@@ -1,5 +1,9 @@
-mod aedat_conversion;
-pub use aedat_conversion::aedat_utilities;
+mod aedat_data;
+mod aedat_header_tools;
+mod cli_configs;
+mod tests;
+
+mod aedat_conversions;
 
 use std::fs::File;
 use std::io::prelude::*;
@@ -9,8 +13,15 @@ use std::time::Instant;
 
 use clap::{Arg, ArgAction, ArgGroup, ArgMatches, Command};
 
+use crate::aedat_data::get_events;
+use crate::aedat_header_tools::{find_header_end, parse_camera_type};
+use crate::cli_configs::*;
+use aedat_conversions::csv::create_csv;
+use aedat_conversions::time_window_csv::*;
+use aedat_conversions::video::{create_event_based_video, create_time_based_video};
+
 fn csv_convert(args: &ArgMatches) {
-    let csv_config = aedat_utilities::CsvConfig::new(args).unwrap_or_else(|err| {
+    let csv_config = CsvConfig::new(args).unwrap_or_else(|err| {
         eprintln!("Problem parsing arguments\n{err}");
         process::exit(1);
     });
@@ -22,13 +33,13 @@ fn csv_convert(args: &ArgMatches) {
     let mut aedat_file = Vec::new();
     f.read_to_end(&mut aedat_file).unwrap();
 
-    let cam = aedat_utilities::parse_camera_type(&aedat_file).unwrap();
-    let header_end = aedat_utilities::find_header_end(&aedat_file).unwrap();
-    let events = aedat_utilities::get_events(header_end, &aedat_file).unwrap();
+    let cam = parse_camera_type(&aedat_file).unwrap();
+    let header_end = find_header_end(&aedat_file).unwrap();
+    let events = get_events(header_end, &aedat_file).unwrap();
 
     let now = Instant::now();
 
-    aedat_utilities::create_csv(events, &csv_config, &cam).unwrap();
+    create_csv(events, &csv_config, &cam).unwrap();
 
     let elapsed = now.elapsed();
     let sec = (elapsed.as_secs() as f64) + (f64::from(elapsed.subsec_nanos()) / 1_000_000_000.0);
@@ -36,7 +47,7 @@ fn csv_convert(args: &ArgMatches) {
 }
 
 fn vid_convert(args: &ArgMatches) {
-    let vid_config = aedat_utilities::VidConfig::new(args).unwrap_or_else(|err| {
+    let vid_config = VidConfig::new(args).unwrap_or_else(|err| {
         eprintln!("Problem parsing arguments\n{err}");
         process::exit(1);
     });
@@ -47,21 +58,21 @@ fn vid_convert(args: &ArgMatches) {
     let mut aedat_file = Vec::new();
     f.read_to_end(&mut aedat_file).unwrap();
 
-    let cam = aedat_utilities::parse_camera_type(&aedat_file).unwrap();
+    let cam = parse_camera_type(&aedat_file).unwrap();
 
-    let header_end = aedat_utilities::find_header_end(&aedat_file).unwrap();
+    let header_end = find_header_end(&aedat_file).unwrap();
 
-    let events = aedat_utilities::get_events(header_end, &aedat_file).unwrap();
+    let events = get_events(header_end, &aedat_file).unwrap();
 
     if args.get_flag("timeBasedReconstruction") {
-        aedat_utilities::create_time_based_video(events, &vid_config, &cam).unwrap();
+        create_time_based_video(events, &vid_config, &cam).unwrap();
     } else {
-        aedat_utilities::create_event_based_video(events, &vid_config, &cam).unwrap();
+        create_event_based_video(events, &vid_config, &cam).unwrap();
     }
 }
 
 fn time_window_convert(args: &ArgMatches) {
-    let time_window_config = aedat_utilities::TimeWindowConfig::new(args).unwrap_or_else(|err| {
+    let time_window_config = TimeWindowConfig::new(args).unwrap_or_else(|err| {
         eprintln!("Problem parsing arguments\n{err}");
         process::exit(1);
     });
@@ -72,14 +83,13 @@ fn time_window_convert(args: &ArgMatches) {
     let mut aedat_file = Vec::new();
     f.read_to_end(&mut aedat_file).unwrap();
 
-    let cam = aedat_utilities::parse_camera_type(&aedat_file).unwrap();
+    let cam = parse_camera_type(&aedat_file).unwrap();
 
-    let header_end = aedat_utilities::find_header_end(&aedat_file).unwrap();
-    
-    let events = aedat_utilities::get_events(header_end, &aedat_file).unwrap();
+    let header_end = find_header_end(&aedat_file).unwrap();
 
-    aedat_utilities::create_time_window_csv(events, &time_window_config, &cam).unwrap();
-    
+    let events = get_events(header_end, &aedat_file).unwrap();
+
+    create_time_window_csv(events, &time_window_config, &cam).unwrap();
 }
 
 fn main() {
@@ -250,7 +260,6 @@ fn main() {
                     .value_parser(clap::value_parser!(u32))
                     .action(ArgAction::Set)
                     .help("The maximum number time windows to be encoded"),
-                    
             )
             .arg(
                 Arg::new("includeBoth")

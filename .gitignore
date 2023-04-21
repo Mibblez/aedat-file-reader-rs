@@ -23,5 +23,8 @@ Cargo.lock
 # venv
 /venv/
 
+# VS code files
+.vscode/
+
 # testing shell script
 lazy.sh
