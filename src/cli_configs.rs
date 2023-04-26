@@ -53,8 +53,11 @@ impl CsvConfig {
 pub struct TimeWindowConfig {
     pub filename: PathBuf,
     pub include_both_column: bool,
+    pub include_pgm: bool,
     pub window_size: u32,
     pub max_windows: u32,
+    pub pgm_scale: usize,
+    pub pgm_threshold: usize,
 }
 
 impl TimeWindowConfig {
@@ -71,11 +74,24 @@ impl TimeWindowConfig {
 
         let include_both_column = args.get_flag("includeBoth");
 
+        let include_pgm = args.get_flag("includePgm");
+        let pgm_scale = match args.get_one::<usize>("pgmScale") {
+            Some(v) => v.to_owned(),
+            None => 1,
+        };
+        let pgm_threshold = match args.get_one::<usize>("pgmThreshold") {
+            Some(v) => v.to_owned(),
+            None => 0,
+        };
+
         Ok(TimeWindowConfig {
             filename,
             include_both_column,
+            include_pgm,
             window_size,
             max_windows,
+            pgm_scale,
+            pgm_threshold,
         })
     }
 
@@ -85,6 +101,10 @@ impl TimeWindowConfig {
 
         if self.include_both_column {
             header_tmp.push_str(",Both");
+        }
+
+        if self.include_pgm {
+            header_tmp.push_str(",PGM_String");
         }
 
         header_tmp.push('\n');

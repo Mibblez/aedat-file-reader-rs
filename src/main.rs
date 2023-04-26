@@ -267,6 +267,35 @@ fn main() {
                     .short('i')
                     .action(ArgAction::SetTrue)
                     .help("Include a column containing the sum of the ON and OFF events in a given time window"),
+            )
+            .arg(
+                Arg::new("includePgm")
+                    .long("include_pgm")
+                    .short('p')
+                    .requires("pgmThreshold")
+                    .requires("pgmScale")
+                    .action(ArgAction::SetTrue)
+                    .help("Include a downscaled PGM image in each row. \
+                           Note that these PGM images will contain dashes in place of newline characters. \
+                           The dashes will need to be converted to newlines before the images can be opened"),
+            )
+            .arg(
+                Arg::new("pgmThreshold")
+                    .long("pgm_threshold")
+                    .short('t')
+                    .requires("includePgm")
+                    .value_parser(clap::value_parser!(usize))
+                    .action(ArgAction::Set)
+                    .help("The number of events required to activate a pixel in the downscaled PGM image"),
+            )
+            .arg(
+                Arg::new("pgmScale")
+                    .long("pgm_scale")
+                    .short('s')
+                    .requires("includePgm")
+                    .value_parser(clap::value_parser!(usize))
+                    .action(ArgAction::Set)
+                    .help("The factor at which the downscaled image is scaled by"),
             ),
         )
         .get_matches();
