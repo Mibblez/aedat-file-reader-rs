@@ -12,6 +12,10 @@ Cargo.lock
 # Pycharm Idea files
 **/.idea
 
+# Zip files
+*.7z
+*.zip
+
 # CSV and video exports and AEDAT files
 *.csv
 *.avi

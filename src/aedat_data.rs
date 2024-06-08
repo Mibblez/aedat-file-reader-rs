@@ -63,12 +63,12 @@ impl Event {
                 )
             }
             CameraType::DAVIS240 => {
-                // DAVIS240  (X = width - bits51-44) ; (Y = height - bits60-54) [bytes 0-2]
+                // DAVIS240  (X = width - bits44-51) ; (Y = height - bits54-61) [bytes 0-2]
                 (
                     // X coordinate
                     240 - (((self.bytes[1] << 4) & 0b1111_0000) + ((self.bytes[2] >> 4) & 0b1111)),
                     // Y coordinate
-                    180 - (((self.bytes[0] << 2) & 0b0111_1100) + ((self.bytes[1] >> 6) & 0b11)),
+                    180 - (((self.bytes[0] << 2) & 0b1111_1100) + ((self.bytes[1] >> 6) & 0b11)),
                 )
             }
         }
