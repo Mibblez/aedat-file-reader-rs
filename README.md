@@ -16,15 +16,6 @@ cd aedat-file-reader-rs
 cargo build --release
 ```
 
-### External Dependencies
-
-For video exports:
-
-* [Python3](https://www.python.org/downloads/) with the following packages installed
-    * opencv-python
-    * natsort
-
-
 ## Basic Usage
 
 CSV export:

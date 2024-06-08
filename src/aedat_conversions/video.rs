@@ -3,10 +3,14 @@ use std::{
     fs,
     io::ErrorKind,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use image::{ImageBuffer, Rgb};
+use opencv::core::Size;
+use opencv::imgcodecs::{imread, IMREAD_COLOR};
+
+use opencv::prelude::*;
+use opencv::videoio::VideoWriter;
 
 use crate::aedat_data::{CameraParameters, Event};
 use crate::cli_configs::VidConfig;
@@ -151,7 +155,7 @@ pub fn create_time_based_video(
 
     if !config.omit_video {
         //encode_frames(&video_name, &frame_tmp_dir)?;
-        encode_frames(&config.filename.to_string_lossy(), &frame_tmp_dir)?;
+        encode_frames(&config.filename.to_string_lossy(), &frame_tmp_dir, cam)?;
     }
 
     if !config.keep_frames {
@@ -246,7 +250,7 @@ pub fn create_event_based_video(
     .unwrap();
 
     if !config.omit_video {
-        encode_frames(&config.filename.to_string_lossy(), &frame_tmp_dir)?;
+        encode_frames(&config.filename.to_string_lossy(), &frame_tmp_dir, cam)?;
     }
 
     if !config.keep_frames {
@@ -275,39 +279,42 @@ fn place_pixel(
     }
 }
 
-fn encode_frames(filename: &str, frame_tmp_dir: &PathBuf) -> std::io::Result<()> {
-    // Encode images into a video via python script
-    let output = Command::new("python3")
-        .arg("src/frames_to_vid.py")
-        .arg(format!("{filename}.avi"))
-        .arg(frame_tmp_dir)
-        .output()
-        .expect("failed to execute process");
+fn encode_frames(
+    filename: &str,
+    frame_tmp_dir: &PathBuf,
+    cam: &CameraParameters,
+) -> std::io::Result<()> {
+    let paths = fs::read_dir(frame_tmp_dir).expect("Could not open frame tmp directory");
+    let mut image_files: Vec<String> = paths
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path().display().to_string())
+        .collect();
 
-    let python_msg = String::from_utf8_lossy(&output.stdout).to_string();
+    image_files.sort_by(|a, b| natord::compare(a, b));
 
-    // Check for errors in python script
-    if &python_msg != "0" {
-        // Clear tmp files
-        let paths = fs::read_dir(frame_tmp_dir)?;
-        for path in paths {
-            fs::remove_file(path?.path())?;
-        }
+    // Set video properties
+    let fourcc = VideoWriter::fourcc('M', 'J', 'P', 'G').unwrap();
+    let fps = 30.0;
+    let video_filename = filename.to_owned() + ".avi";
 
-        return match python_msg.as_ref() {
-            "1" => Err(std::io::Error::new(
-                ErrorKind::Other,
-                "Unmet Python dependency in frames_to_vid.py",
-            )),
-            "2" => Err(std::io::Error::new(
-                ErrorKind::Other,
-                "frames_to_vid.py must be run with Python3",
-            )),
-            _ => Err(std::io::Error::new(
-                ErrorKind::Other,
-                "Unknown error in frames_to_vid.py",
-            )),
-        };
+    // Create a VideoWriter
+    let mut video = VideoWriter::new(
+        &video_filename,
+        fourcc,
+        fps,
+        Size::new(i32::from(cam.camera_x), i32::from(cam.camera_y)),
+        true,
+    )
+    .expect("Could not initialize video writer");
+
+    // Write each image frame to the video
+    for image_file in image_files {
+        let frame = imread(&image_file, IMREAD_COLOR).unwrap();
+        video.write(&frame).expect("Could not encode file to video");
     }
+
+    // Release the VideoWriter
+    video.release().expect("Could not finalize video");
+
     Ok(())
 }
