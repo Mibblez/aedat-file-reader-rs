@@ -1,3 +1,7 @@
+<a href="https://forthebadge.com/">
+<img src="https://forthebadge.com/images/badges/60-percent-of-the-time-works-every-time.svg" width="300">
+</a>
+
 # AEDAT File Reader Rs
 
 Program for converting AEDAT files to CSV or video.
