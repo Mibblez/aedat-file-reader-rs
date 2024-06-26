@@ -4,11 +4,20 @@ Program for converting AEDAT files to CSV or video.
 
 Rust port of this [UWP App](https://github.com/MartinNowak96/AEDAT-File-Reader).
 
-### Installing
+## Installing
 
 Ensure that the latest version of [Rust](https://www.rust-lang.org/tools/install) has been installed.
 
-Build the project with:
+### External Dependencies
+
+Install the required external dependencies
+#### Ubuntu
+```
+apt install libopencv-dev clang libclang-dev
+```
+For other operating systems, follow the instructions [here](https://github.com/twistedfall/opencv-rust/blob/master/INSTALL.md).
+
+### Build
 
 ```
 git clone https://github.com/Mibblez/aedat-file-reader-rs
