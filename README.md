@@ -1,5 +1,5 @@
 <a href="https://forthebadge.com/">
-<img src="https://forthebadge.com/images/badges/60-percent-of-the-time-works-every-time.svg" width="350">
+<img src="https://forthebadge.com/images/badges/60-percent-of-the-time-works-every-time.svg" width="250">
 </a>
 
 # AEDAT File Reader Rs
